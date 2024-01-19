@@ -1,0 +1,37 @@
+name = "multilevelNN"
+uuid = "1bbe3d30-1238-442b-a7eb-ee908b0d2ff7"
+authors = ["Qi Wang <wang@wias-berlin.de>, Robert John Baraldi <rjbaral@sandia.gov> and Michael Hintermueller <hintermueller@wias-berlin.de"]
+version = "1.0.0-DEV"
+
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearOperators = "5c8ed15e-5a4c-59e4-a42b-c7e8811fb125"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
+NLPModelsModifiers = "e01155f1-5c6f-4375-a9d8-616dd036575f"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ProximalOperators = "a725b495-10eb-56fe-b38b-717eba820537"
+SolverCore = "ff4d7338-4cf1-434d-91df-b86cb86fb843"
+TSVD = "9449cd9e-2762-5aa3-a617-5413e99d722e"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+AlgebraicMultigrid ="2169fc97-5a83-5252-b627-83903c6c433c"
+
+[compat]
+LinearOperators = "2.5.2"
+NLPModels = "0.19"
+NLPModelsModifiers = "0.6"
+ProximalOperators = "0.15"
+SolverCore = "0.3.0"
+TSVD = "0.4"
+julia = "^1.6.0"
+
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+TestSetExtensions = "98d24dd4-01ad-11ea-1b02-c9a08f80db04"
+
+
+[targets]
+test = ["Test"]
