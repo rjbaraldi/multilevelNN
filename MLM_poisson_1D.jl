@@ -431,9 +431,11 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
     size_grad = size(grad_obj)[1]
     size_para = size(vv)[1]
     k=0
+    ss = 0.2*ones(size_para)
     if norm(grad_obj,2)>ϵ
         m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
-        (x,stats) = cgls(matrix_A(grad_obj,-ones(size_grad),λ=λ,rtol=θ))
+        #cgls is not correct, the problem is that A is not positive definite
+        (x,stats) = cgls(matrix_A(ww,xx,bb,dd,vv),transpose(grad_obj),λ=λ,rtol=θ)
         ss=x
         ρ_numerator = obj(ww,xx,bb,dd,vv)-obj(ww+ss,xx,bb+ss,dd,vv+ss)
         ρ_denominator = taylor(ww,xx,bb,dd,vv,zeros(size_para))-taylor(ww,xx,bb,dd,vv,ss)
