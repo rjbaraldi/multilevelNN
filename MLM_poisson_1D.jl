@@ -3,11 +3,11 @@ using TrustRegionMethods
 using PyPlot
 using DifferentialEquations
 using Optim, Flux
-using Random
+using Random,Printf
 using LinearAlgebra, LinearOperators
 using AlgebraicMultigrid, Krylov
 using ForwardDiff, SparseArrays
-using Printf
+
 
 #Define the pde
 function pde_sol(x,v)
@@ -433,12 +433,15 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
     k=0
     ss = 0.2*ones(size_para)
 		@info @sprintf "%6s %8s %8s %6s %8s" "iter" "f(x)" "||grad f||" "ρ" "λ"
-    if norm(grad_obj,2)>ϵ
+    while norm(grad_obj,2)>ϵ
         m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
-        #cgls is not correct, the problem is that A is not positive definite
-        (x,stats) = cgls(matrix_A(ww,xx,bb,dd,vv),grad_obj,λ=λ,rtol=θ)
+        A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para))
+        A_coeff = A_com.U
+        A_coeff_T = A_com.L
+        b_new = inv(A_coeff_T)*grad_obj
+        (x,stats) = lsqr(A_coeff,b_new,rtol=θ)
         ss=x
-				fk = obj(ww,xx,bb,dd,vv)
+		fk = obj(ww,xx,bb,dd,vv)
         ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
         ρ_denominator = taylor(ww,xx,bb,dd,vv,zeros(size_para))-taylor(ww,xx,bb,dd,vv,ss)
         ρ = ρ_numerator/ρ_denominator
@@ -459,11 +462,118 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
         end
         k += 1
 				@info @sprintf "%6d %8.1e %8.1e %8.1e %8.1e" k fk norm(grad_obj,2) ρ λ
-    else
     end
     return ww,vv,bb
 end
+#Random.seed!(1234)
+#v = 20
+#x_data = LinRange(0.0,1.0,2*v+1)
+#xx_try=collect(x_data)
+#ww_try=[0.1,0.2,3.0,0.5,1.6,0.9]
+#bb_try=[0.0,1.0,2.0,3.2,1.3,0.8]
+#vv_try=[1.0,1.5,0.9,1.2,2.8,0.6]
+#dd_try=1.0
 
+#LM(ww_try,xx_try,bb_try,dd_try,vv_try,0.05,10^(-4))
+
+function obj_multilevel(l,ww,xx,bb,dd,vv)
+    ϵ_AMG=0.9
+    σ=1
+    R=restriction(matrix_A(ww,xx,bb,dd,vv),ϵ_AMG,σ)
+    while l > 1
+    obj(R*ww,xx,R*bb,dd,R*vv)
+    l = l-1
+    end
+    return obj(R*ww,xx,R*bb,dd,R*vv)
+end
+
+function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
+    η_1=0.1
+    η_2=0.75
+    γ_1=0.85
+    γ_2=0.5
+    γ_3=1.5
+    λ_min=10^(-6)
+    θ=0.01
+    ϵ_AMG=0.9
+    ϵ_H = ϵ
+    P = prolongation(matrix_A(ww,xx,bb,dd,vv),ϵ_AMG)
+    #here, we could also times some constant σ to R
+    R = transpose(P)
+    rowsize,colsize = size(R)
+    k = 0
+    grad_v = obj_v(ww,xx,bb,dd,vv)
+    grad_w = obj_w(ww,xx,bb,dd,vv)
+    grad_b = obj_b(ww,xx,bb,dd,vv)
+    grad_obj = grad_v/sqrt(norm(grad_v,Inf))+grad_b/sqrt(norm(grad_b,Inf))+grad_w/sqrt(norm(grad_w,Inf))
+    R_grad_obj = R*grad_obj
+    while norm(grad_obj,2) > ϵ
+        if l>1 && norm(R_grad_obj,2) >= ϵ_H && norm(R_grad_obj,2) >= κ_H*norm(grad_obj,2)
+            ww_c = ww
+            vv_c = vv
+            bb_c = bb
+            ss = 0.1*ones(rowsize)
+            func_H = obj_multilevel(l-1,ww,xx,bb,dd,vv)
+            func_H_v(ww,xx,bb,dd,vv) = ForwardDiff.gradient(vv -> obj_multilevel(l-1,ww,xx,bb,dd,vv),vv)
+            func_H_w(ww,xx,bb,dd,vv) = ForwardDiff.gradient(ww -> obj_multilevel(l-1,ww,xx,bb,dd,vv),ww)
+            func_H_b(ww,xx,bb,dd,vv) = ForwardDiff.gradient(bb -> obj_multilevel(l-1,ww,xx,bb,dd,vv),bb)
+            grad_func_H(ww,xx,bb,dd,vv) = func_H_v/sqrt(norm(gfunc_H_v,Inf))+func_H_b/sqrt(norm(func_H_b,Inf))+func_H_w/sqrt(norm(func_H_w,Inf))
+            re_taylor_second = R_grad_obj-grad_func_H(R*ww,R*bb,dd,R*vv)
+            m_k_H(ss,ww,xx,bb,dd,vv) = obj(R*ww,xx,R*bb,dd,R*vv)+transpose(re_taylor_second)*ss
+            ss,ww_o,bb_o,vv_o = MLM(l-1,m_k_H,R*ww,xx,R*bb,dd,R*vv,λ,ϵ)
+            ww_s = P*(ww_o-R*ww_c)
+            vv_s = P*(vv_o-R*vv_c)
+            bb_s = P*(bb_o-R*bb_c)
+            m_k_h = m_k_H(ss,ww,xx,bb,dd,vv)
+            ss = P*ss
+        else
+            grad_v = obj_v(ww,xx,bb,dd,vv)
+            grad_w = obj_w(ww,xx,bb,dd,vv)
+            grad_b = obj_b(ww,xx,bb,dd,vv)
+            grad_obj = grad_v/sqrt(norm(grad_v,Inf))+grad_b/sqrt(norm(grad_b,Inf))+grad_w/sqrt(norm(grad_w,Inf))
+            size_grad = size(grad_obj)[1]
+            size_para = size(vv)[1]
+            ss = 0.2*ones(size_para)
+		                  @info @sprintf "%6s %8s %8s %6s %8s" "iter" "f(x)" "||grad f||" "ρ" "λ"
+            λ = 0.05
+            m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
+            A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para))
+            A_coeff = A_com.U
+            A_coeff_T = A_com.L
+            b_new = inv(A_coeff_T)*grad_obj
+            (x,stats) = lsqr(A_coeff,b_new)
+            ss=x
+            m_k_h(ss) = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
+        end
+        fk = obj(ww,xx,bb,dd,vv)
+        ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
+        ρ_denominator = m_k_h(zeros(size_para))-m_k_h(ww,xx,bb,dd,vv,ss)
+        ρ = ρ_numerator/ρ_denominator
+        if ρ >= η_1
+            ww = ww+ss
+            vv = vv+ss
+            bb = bb+ss
+            if ρ>=η_2
+                λ = max(λ_min,γ_2*λ)
+            else
+                λ = max(λ_min,γ_1*λ)
+            end
+        else
+            ww=ww
+            vv=vv
+            bb=bb
+            λ=γ_3*λ
+        end
+        k += 1
+				@info @sprintf "%6d %8.1e %8.1e %8.1e %8.1e" k fk norm(grad_obj,2) ρ λ
+    end
+    return ww,vv,bb
+end
+            
+            
+        end
+    end
+end
 
 
 
