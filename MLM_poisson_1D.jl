@@ -7,7 +7,7 @@ using Random
 using LinearAlgebra, LinearOperators
 using AlgebraicMultigrid, Krylov
 using ForwardDiff, SparseArrays
-
+using Printf
 
 #Define the pde
 function pde_sol(x,v)
@@ -432,12 +432,14 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
     size_para = size(vv)[1]
     k=0
     ss = 0.2*ones(size_para)
+		@info @sprintf "%6s %8s %8s %6s %8s" "iter" "f(x)" "||grad f||" "ρ" "λ"
     if norm(grad_obj,2)>ϵ
         m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
         #cgls is not correct, the problem is that A is not positive definite
-        (x,stats) = cgls(matrix_A(ww,xx,bb,dd,vv),transpose(grad_obj),λ=λ,rtol=θ)
+        (x,stats) = cgls(matrix_A(ww,xx,bb,dd,vv),grad_obj,λ=λ,rtol=θ)
         ss=x
-        ρ_numerator = obj(ww,xx,bb,dd,vv)-obj(ww+ss,xx,bb+ss,dd,vv+ss)
+				fk = obj(ww,xx,bb,dd,vv)
+        ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
         ρ_denominator = taylor(ww,xx,bb,dd,vv,zeros(size_para))-taylor(ww,xx,bb,dd,vv,ss)
         ρ = ρ_numerator/ρ_denominator
         if ρ >= η_1
@@ -456,6 +458,7 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
             λ=γ_3*λ
         end
         k += 1
+				@info @sprintf "%6d %8.1e %8.1e %8.1e %8.1e" k fk norm(grad_obj,2) ρ λ
     else
     end
     return ww,vv,bb
