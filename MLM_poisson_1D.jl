@@ -433,13 +433,16 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
     k=0
     ss = 0.2*ones(size_para)
 		@info @sprintf "%6s %8s %8s %6s %8s" "iter" "f(x)" "||grad f||" "ρ" "λ"
-    while norm(grad_obj,2)>ϵ
+    if norm(grad_obj,2)>ϵ
         m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
-        A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para))
-        A_coeff = A_com.U
-        A_coeff_T = A_com.L
-        b_new = inv(A_coeff_T)*grad_obj
-        (x,stats) = lsqr(A_coeff,b_new,rtol=θ)
+        #A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para))
+        #A_coeff = A_com.U
+        #A_coeff_T = A_com.L
+        #b_new = inv(A_coeff_T)*grad_obj
+        #(x,stats) = lsqr(A_coeff,b_new,rtol=θ)
+        A_coef = matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para)
+        b_right = grad_obj
+        (x,stats) = gmres(A_coef,b_right,rtol=θ)
         ss=x
 		fk = obj(ww,xx,bb,dd,vv)
         ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
@@ -461,6 +464,7 @@ function LM(ww,xx,bb,dd,vv,λ,ϵ)
             λ=γ_3*λ
         end
         k += 1
+    else
 				@info @sprintf "%6d %8.1e %8.1e %8.1e %8.1e" k fk norm(grad_obj,2) ρ λ
     end
     return ww,vv,bb
@@ -476,17 +480,16 @@ end
 
 #LM(ww_try,xx_try,bb_try,dd_try,vv_try,0.05,10^(-4))
 
-function obj_multilevel(l,ww,xx,bb,dd,vv)
-    ϵ_AMG=0.9
-    σ=1
-    R=restriction(matrix_A(ww,xx,bb,dd,vv),ϵ_AMG,σ)
-    while l > 1
-    obj(R*ww,xx,R*bb,dd,R*vv)
-    l = l-1
-    end
-    return obj(R*ww,xx,R*bb,dd,R*vv)
-end
-
+#function obj_multilevel(l,ww,xx,bb,dd,vv)
+#    ϵ_AMG=0.9
+#    σ=1
+#    R=restriction(matrix_A(ww,xx,bb,dd,vv),ϵ_AMG,σ)
+#    while l >= 1
+#    obj(R*ww,xx,R*bb,dd,R*vv)
+#    l = l-1
+#    end
+#    return obj(R*ww,xx,R*bb,dd,R*vv)
+#end
 
 function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
     func = obj
@@ -510,22 +513,25 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
     grad_b = obj_b(ww,xx,bb,dd,vv)
     grad_obj = grad_v/sqrt(norm(grad_v,Inf))+grad_b/sqrt(norm(grad_b,Inf))+grad_w/sqrt(norm(grad_w,Inf))
     R_grad_obj = R*grad_obj
-    while norm(grad_obj,2) > ϵ
+    if norm(grad_obj,2) > ϵ
         if l>1 && norm(R_grad_obj,2) >= ϵ_H && norm(R_grad_obj,2) >= κ_H*norm(grad_obj,2)
-            ww_c = ww
-            vv_c = vv
-            bb_c = bb
+            #ww_c = ww
+            #vv_c = vv
+            #bb_c = bb
             ss = 0.1*ones(rowsize)
             func_H = obj_multilevel(l-1,ww,xx,bb,dd,vv)
-            func_H_v(ww,xx,bb,dd,vv) = ForwardDiff.gradient(vv -> obj(R*ww,xx,R*bb,dd,R*vv),vv)
-            func_H_w(ww,xx,bb,dd,vv) = ForwardDiff.gradient(ww -> obj(R*ww,xx,R*bb,dd,R*vv),ww)
-            func_H_b(ww,xx,bb,dd,vv) = ForwardDiff.gradient(bb -> obj(R*ww,xx,R*bb,dd,R*vv),bb)
-            grad_func_H(ww,xx,bb,dd,vv) = func_H_v(ww,xx,bb,dd,vv) /sqrt(norm(func_H_v(ww,xx,bb,dd,vv) ,Inf))+func_H_b(ww,xx,bb,dd,vv)/sqrt(norm(func_H_b(ww,xx,bb,dd,vv),Inf))+func_H_w(ww,xx,bb,dd,vv)/sqrt(norm(func_H_w(ww,xx,bb,dd,vv),Inf))
-            re_taylor_second = R_grad_obj-grad_func_H(ww,xx,bb,dd,vv)
-            m_k_H(ww,xx,bb,dd,vv,ss) = obj(R*ww,xx,R*bb,dd,R*vv)+transpose(re_taylor_second)*ss
-            ss,ww_o,bb_o,vv_o = MLM(l-1,m_k_H,R*ww,xx,R*bb,dd,R*vv,λ,ϵ)
-            rm_k_h(ww,xx,bb,dd,vv,ss) = m_k_H(ww,xx,bb,dd,vv,ss)
-            ss = P*ss
+            vv_H=R*vv
+            ww_H=R*ww
+            bb_H=R*bb
+            func_H_v(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(vv_H -> obj(ww_H,xx,bb_H,dd,vv_H),vv_H)
+            func_H_w(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(ww_H -> obj(ww_H,xx,bb_H,dd,vv_H),vv_H)
+            func_H_b(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(bb_H -> obj(ww_H,xx,bb_H,dd,vv_H),bb_H)
+            grad_func_H(ww_H,xx,bb_H,dd,vv_H) = func_H_v(ww_H,xx,bb_H,dd,vv_H) /sqrt(norm(func_H_v(ww_H,xx,bb_H,dd,vv_H) ,Inf))+func_H_b(ww_H,xx,bb_H,dd,vv_H)/sqrt(norm(func_H_b(ww_H,xx,bb_H,dd,vv_H),Inf))+func_H_w(ww_H,xx,bb_H,dd,vv_H)/sqrt(norm(func_H_w(ww_H,xx,bb_H,dd,vv_H),Inf))
+            re_taylor_second = R_grad_obj-grad_func_H(ww_H,xx,bb_H,dd,vv_H)
+            m_k_H(ww_H,xx,bb_H,dd,vv_H,ss) = obj(ww_H,xx,bb_H,dd,vv_H)+transpose(re_taylor_second)*ss
+            ss_o,ww_o,bb_o,vv_o = MLM(l-1,m_k_H,ww_H,xx,bb_H,dd,vv_H,λ,ϵ)
+            rm_k_h(ww,xx,bb,dd,vv,ss) = m_k_H(ww_o,xx,bb_o,dd,vv_o,ss_o)
+            ss = P*ss_o
             fk = obj(ww,xx,bb,dd,vv)
             ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
             ρ_denominator = rm_k_h(ww,xx,bb,dd,vv,zeros(size_para))-rm_k_h(ww,xx,bb,dd,vv,ss)
@@ -584,11 +590,11 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
             end
         end
         k += 1
+    else
 				@info @sprintf "%6d %8.1e %8.1e %8.1e %8.1e" k fk norm(grad_obj,2) ρ λ
     end
     return ss,ww,vv,bb
 end
-
 
 
 
