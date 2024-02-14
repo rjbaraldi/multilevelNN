@@ -523,6 +523,7 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
             vv_H=R*vv
             ww_H=R*ww
             bb_H=R*bb
+            
             func_H_v(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(vv_H -> obj(ww_H,xx,bb_H,dd,vv_H),vv_H)
             func_H_w(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(ww_H -> obj(ww_H,xx,bb_H,dd,vv_H),vv_H)
             func_H_b(ww_H,xx,bb_H,dd,vv_H) = ForwardDiff.gradient(bb_H -> obj(ww_H,xx,bb_H,dd,vv_H),bb_H)
@@ -532,9 +533,10 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
             ss_o,ww_o,bb_o,vv_o = MLM(l-1,m_k_H,ww_H,xx,bb_H,dd,vv_H,λ,ϵ)
             rm_k_h(ww,xx,bb,dd,vv,ss) = m_k_H(ww_o,xx,bb_o,dd,vv_o,ss_o)
             ss = P*ss_o
+            size_grad = size(grad_obj)[1]
             fk = obj(ww,xx,bb,dd,vv)
             ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
-            ρ_denominator = rm_k_h(ww,xx,bb,dd,vv,zeros(size_para))-rm_k_h(ww,xx,bb,dd,vv,ss)
+            ρ_denominator = rm_k_h(ww,xx,bb,dd,vv,zeros(size_grad))-rm_k_h(ww,xx,bb,dd,vv,ss)
             ρ = ρ_numerator/ρ_denominator
             if ρ >= η_1
                 ww = P*ww_o+ss
@@ -557,12 +559,11 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
             grad_b = obj_b(ww,xx,bb,dd,vv)
             grad_obj = grad_v/sqrt(norm(grad_v,Inf))+grad_b/sqrt(norm(grad_b,Inf))+grad_w/sqrt(norm(grad_w,Inf))
             size_grad = size(grad_obj)[1]
-            size_para = size(vv)[1]
-            ss = 0.2*ones(size_para)
+            ss = 0.2*ones(size_grad)
 		                  @info @sprintf "%6s %8s %8s %6s %8s" "iter" "f(x)" "||grad f||" "ρ" "λ"
             λ = 0.05
             m_k = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
-            A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_para))
+            A_com = cholesky(matrix_A(ww,xx,bb,dd,vv)+λ*I(size_grad))
             A_coeff = A_com.U
             A_coeff_T = A_com.L
             b_new = inv(A_coeff_T)*grad_obj
@@ -571,7 +572,7 @@ function MLM(l,func,ww,xx,bb,dd,vv,λ,ϵ)
             m_k_h(ww,xx,bb,dd,vv,ss) = taylor(ww,xx,bb,dd,vv,ss)+λ*norm(ss,2)/2
             fk = obj(ww,xx,bb,dd,vv)
             ρ_numerator = fk-obj(ww+ss,xx,bb+ss,dd,vv+ss)
-            ρ_denominator = m_k_h(ww,xx,bb,dd,vv,zeros(size_para))-m_k_h(ww,xx,bb,dd,vv,ss)
+            ρ_denominator = m_k_h(ww,xx,bb,dd,vv,zeros(size_grad))-m_k_h(ww,xx,bb,dd,vv,ss)
             ρ = ρ_numerator/ρ_denominator
             if ρ >= η_1
                 ww = ww+ss
