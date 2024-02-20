@@ -218,14 +218,14 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
         s_b = s[para_size+1:2*para_size]
         s_v = s[2*para_size+1:3*para_size]
         s_d = s[end]
-        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights+s_w,input_biases+s_b,output_weights+s_v,output_bias+s_d,data,σ)
+        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ)
         ρ_denominator = m_k(input_weights,input_biases,output_weights,output_bias,data,σ,zeros(s_size))-m_k(input_weights,input_biases,output_weights,output_bias,data,σ,s)
         ρ = ρ_numerator/ρ_denominator
         if ρ >= η1
-            input_weights = input_weights+s_w
-            input_biases = input_biases+s_b
-            output_weights = output_weights+s_v
-            output_bias = output_bias+s_d
+            input_weights = input_weights.+s_w
+            input_biases = input_biases.+s_b
+            output_weights = output_weights.+s_v
+            output_bias = output_bias.+s_d
             if ρ >= η2
                 λ = max(λ_min,γ2*λ)
             else
@@ -236,7 +236,7 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
             input_biases = input_biases
             output_weights = output_weights
             output_bias = output_bias
-            λ = γ3*γ
+            λ = γ3*λ
         end
     end
     return input_weights,input_biases,output_weights,output_bias
@@ -661,14 +661,14 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
         P_block = vcat(hcat(P,zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),P,zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2]),P))
         s_h[1:end-1] .= P_block*(s_H[1:end-1].-vcat(w_H,b_H,v_H))
         s_h[end] = s_H[end]
-        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights+s_h[1:para_size],input_biases+s_h[para_size+1:2*para_size],output_weights+s_h[2*para_size+1:3*para_size],output_bias+s_h[end],data,σ)
-        ρ_denominator = m_H(0)-m_H(s_H)
+        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights.+s_h[1:para_size],input_biases.+s_h[para_size+1:2*para_size],output_weights.+s_h[2*para_size+1:3*para_size],output_bias.+s_h[end],data,σ)
+        ρ_denominator = m_H(zeros(s_H_0_size))-m_H(s_H)
         ρ = ρ_numerator/ρ_denominator
         if ρ >= η1
-            input_weights = input_weights+s_h[1:para_size]
-            input_biases = input_biases+s_h[para_size+1:2*para_size]
-            output_weights = output_weights+s_h[2*para_size+1:3*para_size]
-            output_bias = output_bias+s_h[end]
+            input_weights = input_weights.+s_h[1:para_size]
+            input_biases = input_biases.+s_h[para_size+1:2*para_size]
+            output_weights = output_weights.+s_h[2*para_size+1:3*para_size]
+            output_bias = output_bias.+s_h[end]
             if ρ >= η2
                 λ = max(λ_min,γ2*λ)
             else
@@ -679,7 +679,7 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
             input_biases = input_biases
             output_weights = output_weights
             output_bias = output_bias
-            λ = γ3*γ
+            λ = γ3*λ
         end
         return input_weights,input_biases,output_weights,output_bias
        else
@@ -689,6 +689,8 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
 end
 
 MLM_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid,2)
+
+
 #obj_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)      
 #A_AMG = matrix_A_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
 #P = prolongation(A_AMG, 0.9)
