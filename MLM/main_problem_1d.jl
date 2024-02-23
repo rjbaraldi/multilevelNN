@@ -43,6 +43,7 @@ using LinearAlgebra, LinearOperators
 using AlgebraicMultigrid, Krylov
 using ForwardDiff, SparseArrays
 using Optimization
+using Zygote, FluxOptTools, Statistics
 
 ##Build neural network
 function one_hidden_layer_nn(
@@ -61,7 +62,7 @@ end
 
 
 
-
+#flux_1d_approx = one_hidden_layer_nn(fa_w,fa_b,fa_v,fa_d,x',sigmoid)
 
 
 
@@ -86,27 +87,56 @@ function cos_v(ν)
     return cos_vx
 end
 
-#Gradient/Hessian of neural network with respect to data (the variable of pde)
-function grad_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ)
-    grad_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ)= ForwardDiff.jacobian(data->one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data, σ),data)
-    return diag(grad_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ))
-end
-
-function hess_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ)
-    hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ) = ForwardDiff.jacobian(data->grad_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ),data)
-    #@show hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ)   
-    return diag(hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ))
-end
-
-
-function obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-    g_1 = possion_1d(cos_v(20))[2] #the right-hand side could choose other PDEs
-    g_2 = possion_1d(cos_v(20))[3]
-    N_u = size(data)[1]-2
-    loss = 0
-    for i in 1:N_u
-    loss += norm(g_1(data[i+1])+hess_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data,σ)[i+1],2)^2
+function constant(a)
+    function a_func(x)
+        return (-a/2)*x^2
     end
+    return a_func
+end
+
+
+#Gradient/Hessian of neural network with respect to data (the variable of pde)
+#function grad_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ)
+ #   grad_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ)= ForwardDiff.jacobian(data->one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data, σ),data)
+  #  return diag(grad_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ))
+#end
+
+#function hess_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ)
+   # hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ) = ForwardDiff.jacobian(data->grad_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data, σ),data)
+    #@show hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ)   
+    #return diag(hess_one_hidden(input_weights,input_biases,output_weights,output_bias,data, σ))
+#end
+
+#approximate laplacian operator
+function buildLap1D(x)
+    nx = length(x)
+    D = diagm(-1=>ones(nx-1)) + diagm(0=>-2*ones(nx)) + diagm(1=>ones(nx-1))
+    D /= (nx-1)^2
+    return D
+end
+
+#function obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+#    g_1 = possion_1d(constant(1))[2] #the right-hand side could choose other PDEs
+#    g_2 = possion_1d(constant(1))[3]
+ #   N_u = size(data)[1]-2
+ #   loss = 0
+ #   for i in 1:N_u
+ #   loss += norm(g_1(data[i+1])+hess_x_nn_1d(input_weights,input_biases,output_weights,output_bias,data,σ)[i+1],2)^2
+ #   end
+ #   loss = loss/(2*N_u)
+ #   λ_p = 0.1*size(data)[1]
+ #   penalty = norm(g_2(data[1])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[1],2)^2+norm(g_2(data[end])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[end],2)^2
+ #   penalty = λ_p*penalty/4
+ #   return loss+penalty
+#end
+
+
+function obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)
+    g_1 = possion_1d(constant(1))[2] #the right-hand side could choose other PDEs
+    g_2 = possion_1d(constant(1))[3]
+    N_u = size(data)[1]-2
+    g_1_data = g_1.(data[2:end-1])
+    loss = norm(g_1_data+buildLap1D(data[2:end-1])*one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data[2:end-1],σ),2)^2
     loss = loss/(2*N_u)
     λ_p = 0.1*size(data)[1]
     penalty = norm(g_2(data[1])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[1],2)^2+norm(g_2(data[end])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[end],2)^2
@@ -114,83 +144,59 @@ function obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     return loss+penalty
 end
 
-
-
-
-
 #function square(x)
 #    return x.^2
 #end
-
-
-
-
+obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_weights->obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_biases->obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_weights->obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+obj_1d_approx_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_bias->obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ) = vcat(obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_approx_d(input_weights,input_biases,output_weights,output_bias,data,σ))
 #Define the gradient of objective function with respect to the parameters of neural networks
-grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
-grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_biases->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
-grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
-grad_obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_bias->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+#grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+#grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_biases->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+#grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+#grad_obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_bias->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
 
-grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ) = vcat(grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ))
-hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)=grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)'
+#grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ) = vcat(grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ),grad_obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ))
+#hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)=grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)'
 #hessian_obj_1d(ww_1_try,bb_try,vv_try,dd_try,x_x_x,identity)
-function taylor_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)
-    #where s is in (3*nodes_num+1)*1
-    first_term = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-    second_term = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)'*s
-    third_term = s'*hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*s/2
-    return first_term+second_term+third_term
-end
-function grad_taylor_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)
-    return grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)+hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*s
-end
+#function taylor_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)
+#    #where s is in (3*nodes_num+1)*1
+#    first_term = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+#    second_term = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)'*s
+#    third_term = s'*hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*s/2
+#    return first_term+second_term+third_term
+#end
+#function grad_taylor_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)
+#    return grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)+hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)*s
+#end
 
-function cgls(A, b, max_iteration, tol)
-    m, n = size(A)
-    x = zeros(n)  # Initial guess
-    r = b - A * x
-    p = r
-    rsold = dot(r, r)
-    for iter = 1:max_iteration
-        Ap = A * p
-        alpha = rsold / dot(Ap, Ap)
-        x += alpha * p
-        r -= alpha * Ap
-        rsnew = dot(r, r)
-        if sqrt(rsnew) < tol
-            println("Converged in $iter iterations.")
-            return x
-        end
-        p = r + (rsnew / rsold) * p
-        rsold = rsnew
-    end
-    println("Maximum iterations reached without convergence.")
-    return x
-end
+#function cgls(A, b, max_iteration, tol)
+#    m, n = size(A)
+#    x = zeros(n)  # Initial guess
+#    r = b - A * x
+#    p = r
+#    rsold = dot(r, r)
+#    for iter = 1:max_iteration
+#        Ap = A * p
+#        alpha = rsold / dot(Ap, Ap)
+ #       x += alpha * p
+ #       r -= alpha * Ap
+  #      rsnew = dot(r, r)
+   #     if sqrt(rsnew) < tol
+   #         println("Converged in $iter iterations.")
+    #        return x
+     #   end
+     #   p = r + (rsnew / rsold) * p
+     #   rsold = rsnew
+    #end
+    #println("Maximum iterations reached without convergence.")
+    #return x
+#end
 
 #give a suitable initial guess of the parameters in neural network
-function nn_para(
-    r,#the number of nodes in the hidden layer
-    σ,#activation function
-    data,#training data,i.e. input x
-    real_solution::Function,#real solution of pdes
-)
-    Layer_1 = Flux.Dense(1=>r, σ)
-    output_layer = Flux.Dense(r=>1)
-    model = Flux.Chain(Layer_1, output_layer)
-    x_model = Float32.(data)
-    y_model = Float32.(real_solution.(x_model))
-    data_model = [([x_model[i]],[y_model[i]]) for i in 1:length(x_model)]
-    loss_model(model,x,y) = norm(model(x).-y) #could change
-    learning_rate = 0.01 #could change
-    opt_state = Flux.setup(Flux.Adam(learning_rate),model)
-    Flux.train!(loss_model,model,data_model,opt_state)
-    input_weight_0 = Layer_1.weight
-    input_bias_0 = Layer_1.bias
-    output_weight_0 = (output_layer.weight)'
-    output_bias_0 = output_layer.bias
-    return input_weight_0,input_bias_0,output_weight_0,output_bias_0
-end
+
 
 function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     η1 = 0.1
@@ -206,21 +212,30 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     para_size = size(output_weights)[1]
     #give an initial step sk
     s = 0.01*ones(s_size)
-    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
-        m_k(input_weights,input_biases,output_weights,output_bias,data,σ,s) = taylor_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)+(λ*norm(s,2)^2)/2
-        tolence_con = norm(grad_taylor_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s)+λ*s,2)/norm(s,2)
+    while norm(grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+        g_w = obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+        g_b = obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+        g_v = obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        g_d = obj_1d_approx_d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj = vcat(g_w,g_b,g_v,g_d)
+        f = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)
+        @show f
+        m_h(s_h) = f+(grad_obj'*s_h)[1]+(s_h'*grad_obj*grad_obj'*s_h/2)[1]+(λ*norm(s_h,2)^2)/2
+        m_s(s_h) = ForwardDiff.gradient(s_h->m_h(s_h),s_h)
+        tolence_con = norm(m_s(s)+λ*s,2)/norm(s,2)
+        @show tolence_con
         while tolence_con > θ
-            linear_lma = hessian_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)+λ*I(s_size)
-            linear_con = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-            s = cgls(linear_lma,linear_con, 1e4, 1e-2) #we can choose different values for the last two parameters 
+            s = Optim.minimizer(optimize(m_h, s)) #we can choose different values for the last two parameters 
         end
         s_w = s[1:para_size]
         s_b = s[para_size+1:2*para_size]
         s_v = s[2*para_size+1:3*para_size]
         s_d = s[end]
-        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ)
-        ρ_denominator = m_k(input_weights,input_biases,output_weights,output_bias,data,σ,zeros(s_size))-m_k(input_weights,input_biases,output_weights,output_bias,data,σ,s)
+        @show s_d
+        ρ_numerator = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d_approx(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ)
+        ρ_denominator = m_h(zeros(s_size))-m_h(s)
         ρ = ρ_numerator/ρ_denominator
+        @show ρ_numerator ρ_denominator
         if ρ >= η1
             input_weights = input_weights.+s_w
             input_biases = input_biases.+s_b
@@ -244,24 +259,24 @@ end
 
 
 
-
 #give a suitable guess of the parameters in neural network, which can be used as the input of LM_1d
-Layer_1 = Flux.Dense(1=>10, sigmoid)
-output_layer = Flux.Dense(10=>1)
-model = Flux.Chain(Layer_1, output_layer)
-x_model = Float32.(collect(LinRange(0,1,41)))
-y_model = Float32.(cos.(20*x_model))
-data_model = [([x_model[i]],[y_model[i]]) for i in 1:length(x_model)]
-loss_model(model,x,y) = norm(model(x).-y)
-learning_rate = 0.01
-opt_state = Flux.setup(Flux.Adam(learning_rate),model)
-Flux.train!(loss_model,model,data_model,opt_state)
-input_weight_0 = vec(Layer_1.weight)
-input_bias_0 = vec(Layer_1.bias)
-output_weight_0 = vec(output_layer.weight)
-output_bias_0 = output_layer.bias
-
-
+Layer_1 = Flux.Dense(1=>50, sigmoid)
+output_layer = Flux.Dense(50=>1)
+m = Flux.Chain(Layer_1, output_layer)
+x = LinRange(0,1,41)'
+y = -(x.^2)/2
+loss() = mean(abs2,m(x) .- y)
+pars = Flux.params(m)
+lossfun, gradfun, fg!, p0 = optfuns(loss, pars)
+res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.Options(iterations=1000, store_trace=true))
+fa_w = Layer_1.weight
+fa_b = Layer_1.bias
+fa_v = vec(output_layer.weight)
+fa_d = output_layer.bias
+input_weights_0 = Layer_1.weight.+rand(1)
+input_bias_0 = Layer_1.bias.+rand(1)
+output_weight_0 = vec(output_layer.weight).+rand(1)
+output_bias_0 = output_layer.bias.+rand(1)
 
 
 function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
@@ -280,40 +295,44 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
     A_AMG = matrix_A_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     P = prolongation(A_AMG, ϵ_AMG)
     R = transpose(P)
+    R = R/sqrt(det(R*R'))
     H_size = size(P)[2]
     para_size = size(input_biases)[1]
     s_size = 3*para_size+1
-    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
-       g_w = grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
-       g_b = grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
-       g_v = grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
-       g_d = grad_obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
+    while norm(grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+       g_w = obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+       g_b = obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+       g_v = obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+       g_d = obj_1d_approx_d(input_weights,input_biases,output_weights,output_bias,data,σ)
        g_withoutd = vcat(g_w,g_b,g_v)
+       grad_obj = vcat(g_w,g_b,g_v,g_d)
        R_block = vcat(hcat(R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2])),hcat(zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],size(R)[2])),hcat(zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),R))
-       R_grad = R_block*vcat(input_weights,input_biases,output_weights)
+       R_grad = R_block*g_withoutd
        R_grad_including_d = vcat(R_grad,g_d)
-       if l>1 && norm(R_grad,2) >= κ_H*norm(g_withoutd,2) && norm(R_grad) > ϵ_H
+       if l>1 && norm(R_grad_including_d,2) >= κ_H*norm(grad_obj,2) && norm(R_grad,2) > ϵ_H
         w_H = R*input_weights
         b_H = R*input_biases
         v_H = R*output_weights
         d_H = output_bias
-        f_H(w_H,b_H,v_H,d_H,s_H,data,σ) = obj_1d(w_H.+s_H[1:H_size],b_H.+s_H[H_size+1:2*H_size],v_H.+s_H[2*H_size+1:end-1],d_H.+s_H[end],data,σ)
+        f_H(w_H,b_H,v_H,d_H,s_H,data,σ) = obj_1d_approx(w_H.+s_H[1:H_size],b_H.+s_H[H_size+1:2*H_size],v_H.+s_H[2*H_size+1:end-1],d_H.+s_H[end],data,σ)
         grad_H_w(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(w_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), w_H)
         grad_H_b(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(b_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), b_H)
         grad_H_v(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(v_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), v_H)
         grad_H_d(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(d_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), d_H)
         grad_H(w_H,b_H,v_H,d_H,s_H,data,σ) = vcat(grad_H_w(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_b(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_v(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_d(w_H,b_H,v_H,d_H,s_H,data,σ))
-        m_H(s_H) = f_H(w_H,b_H,v_H,d_H,s_H,data,σ)+(R_grad_including_d-grad_H(w_H,b_H,v_H,d_H,s_H,data,σ))'*s_H +(λ*norm(s_H,2)^2)/2
+        m_H(s_H) = f_H(w_H,b_H,v_H,d_H,s_H,data,σ)+((R_grad_including_d-grad_H(w_H,b_H,v_H,d_H,s_H,data,σ))'*s_H)[1] +(λ*norm(s_H,2)^2)/2
         s_H_0_size = 3*size(b_H)[1]+1
         s_H_0 = 0.1*ones(s_H_0_size)
         s_H = Optim.minimizer(optimize(m_H, s_H_0))
         s_h = zeros(s_size)
         P_block = vcat(hcat(P,zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),P,zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2]),P))
-        s_h[1:end-1] .= P_block*(s_H[1:end-1].-vcat(w_H,b_H,v_H))
+        s_h[1:end-1] .= P_block*(s_H[1:end-1])
         s_h[end] = s_H[end]
-        ρ_numerator = obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d(input_weights.+s_h[1:para_size],input_biases.+s_h[para_size+1:2*para_size],output_weights.+s_h[2*para_size+1:3*para_size],output_bias.+s_h[end],data,σ)
+        @show s_h[end]
+        ρ_numerator = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d_approx(input_weights.+s_h[1:para_size],input_biases.+s_h[para_size+1:2*para_size],output_weights.+s_h[2*para_size+1:3*para_size],output_bias.+s_h[end],data,σ)
         ρ_denominator = m_H(zeros(s_H_0_size))-m_H(s_H)
         ρ = ρ_numerator/ρ_denominator
+        @show ρ_numerator ρ_denominator ρ
         if ρ >= η1
             input_weights = input_weights.+s_h[1:para_size]
             input_biases = input_biases.+s_h[para_size+1:2*para_size]
@@ -331,49 +350,12 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
             output_bias = output_bias
             λ = γ3*λ
         end
-        return input_weights,input_biases,output_weights,output_bias
+        @show λ
        else
         LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
        end
     end
+    return input_weights,input_biases,output_weights,output_bias
 end
 
-#MLM_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid,2)
-#obj_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)      
-#A_AMG = matrix_A_1d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#P = prolongation(A_AMG, 0.9)
-#R = transpose(P) 
-#w_H_t = R*input_weight_0
-#b_H_t = R*input_bias_0
-#v_H_t = R*output_weight_0
-#d_H_t = output_bias_0
-#size(P)[2]
-#g_w = grad_obj_1d_w(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#g_b = grad_obj_1d_b(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#_v = grad_obj_1d_v(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#g_d = grad_obj_1d_d(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#g_withoutd = vcat(g_w,g_b,g_v)
-#R_block = vcat(hcat(R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2])),
-#hcat(zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],size(R)[2])),
-#hcat(zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),R))
-#R_grad = R_block*vcat(input_weight_0,input_bias_0,output_weight_0)
-#R_grad = R_block*vcat(input_weight_0,input_bias_0,output_weight_0,output_bias_0,x_model,sigmoid)
-#R_grad_including_d = vcat(R_grad,g_d)
-#R_grad = R_block*vcat(input_weight_0,input_bias_0,output_weight_0)
-#R_grad_including_d = vcat(R_grad,g_d)
-#H_size = 2
-#f_H(w_H,b_H,v_H,d_H,s_H,data,σ) = obj_1d(w_H.+s_H[1:H_size],b_H.+s_H[H_size+1:2*H_size],v_H.+s_H[2*H_size+1:end-1],d_H.+s_H[end],data,σ)
-#grad_H_w(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(w_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), w_H)
-#grad_H_b(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(b_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), b_H)
-#grad_H_v(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(v_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), v_H)
-#grad_H_d(w_H,b_H,v_H,d_H,s_H,data,σ) = ForwardDiff.gradient(d_H -> f_H(w_H,b_H,v_H,d_H,s_H,data,σ), d_H)
-#grad_H(w_H,b_H,v_H,d_H,s_H,data,σ) = vcat(grad_H_w(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_b(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_v(w_H,b_H,v_H,d_H,s_H,data,σ),grad_H_d(w_H,b_H,v_H,d_H,s_H,data,σ))
-#s_H = zeros(7)
-#grad_H_w(w_H_t,b_H_t,v_H_t,d_H_t,s_H,x_model,sigmoid)
-#w_H_t.+s_H[1:H_size]
-#obj_1d(w_H_t.+s_H[1:H_size],b_H_t.+s_H[H_size+1:2*H_size],v_H_t.+s_H[2*H_size+1:end-1],d_H_t.+s_H[end],x_model,sigmoid)
-#P_block = vcat(hcat(P,zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),P,zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2]),P))
-#m_H(s_H) = f_H(w_H_t,b_H_t,v_H_t,d_H_t,s_H,x_model,sigmoid)+(R_grad_including_d-grad_H(w_H_t,b_H_t,v_H_t,d_H_t,s_H,x_model,sigmoid))'*s_H +(0.05*norm(s_H,2)^2)/2
-#s_H_0_size = 3*size(b_H_t)[1]+1
-#s_H_0 = 0.1*ones(s_H_0_size)
-#s_H = Optim.minimizer(optimize(m_H, s_H_0))
+MLM_1d(input_weights_0,input_bias_0,output_weight_0,output_bias_0,x',sigmoid,2)
