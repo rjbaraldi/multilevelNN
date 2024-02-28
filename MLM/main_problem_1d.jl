@@ -42,7 +42,7 @@ using Random,Printf
 using LinearAlgebra, LinearOperators
 using AlgebraicMultigrid, Krylov
 using ForwardDiff, SparseArrays
-using Optimization
+using Optimization, ProgressMeter
 using Zygote, FluxOptTools, Statistics
 
 ##Build neural network
@@ -195,7 +195,7 @@ grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ
     #return x
 #end
 
-#give a suitable initial guess of the parameters in neural network
+
 
 
 function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
@@ -221,19 +221,22 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
         f = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)
         @show f
         m_h(s_h) = f+(grad_obj'*s_h)[1]+(s_h'*grad_obj*grad_obj'*s_h/2)[1]+(λ*norm(s_h,2)^2)/2
+        m_k(s_h) = f+(grad_obj'*s_h)[1]+(s_h'*grad_obj*grad_obj'*s_h/2)[1]
         m_s(s_h) = ForwardDiff.gradient(s_h->m_h(s_h),s_h)
-        tolence_con = norm(m_s(s)+λ*s,2)/norm(s,2)
-        @show tolence_con
-        while tolence_con > θ
+        #tolence_con = norm(m_s(s),2)/norm(s,2)
+       # @show tolence_con
+        #if tolence_con > θ
             s = Optim.minimizer(optimize(m_h, s)) #we can choose different values for the last two parameters 
-        end
+       # else
+        #    s = s
+        #end
         s_w = s[1:para_size]
         s_b = s[para_size+1:2*para_size]
         s_v = s[2*para_size+1:3*para_size]
         s_d = s[end]
         @show s_d
-        ρ_numerator = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d_approx(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ)
-        ρ_denominator = m_h(zeros(s_size))-m_h(s)
+        ρ_numerator = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d_approx(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ) #always be negative, should be some error here
+        ρ_denominator = m_k(zeros(s_size))-m_k(s)
         ρ = ρ_numerator/ρ_denominator
         @show ρ_numerator ρ_denominator
         if ρ >= η1
@@ -261,18 +264,41 @@ end
 
 #give a suitable guess of the parameters in neural network, which can be used as the input of LM_1d
 Layer_1 = Flux.Dense(1=>50, sigmoid)
-output_layer = Flux.Dense(50=>1)
-m = Flux.Chain(Layer_1, output_layer)
-x = LinRange(0,1,41)'
+output_layer = Flux.Dense(50=>1,identity)
+model_1d = Flux.Chain(Layer_1, output_layer)
+x = collect(LinRange(0,1,41))
 y = -(x.^2)/2
-loss() = mean(abs2,m(x) .- y)
-pars = Flux.params(m)
-lossfun, gradfun, fg!, p0 = optfuns(loss, pars)
-res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.Options(iterations=1000, store_trace=true))
-fa_w = Layer_1.weight
-fa_b = Layer_1.bias
-fa_v = vec(output_layer.weight)
-fa_d = output_layer.bias
+yy = zeros(1,size(y)[1])
+for i in 1:size(x)[1]
+    yy[1,i] = y[i]
+end
+yy
+optim = Flux.setup(Flux.Adam(0.01),model_1d)
+#loss() = mean(abs2,m(x) .- y)
+losses = []
+yhat = zeros(size(x)[1])
+@info "epoch    loss"
+@showprogress for epoch in 1:1000
+        loss,grads = Flux.withgradient(model_1d) do m
+            yhat = m(x')
+            Flux.Losses.mse(yhat,yy)
+        end
+        Flux.update!(optim,model_1d,grads[1])
+        push!(losses,loss)
+        (epoch %200 ==0) && @info @sprintf "%d  %8.3e" epoch losses[end] 
+end
+
+optim
+fw = Layer_1.weight
+fb = Layer_1.bias
+fv = output_layer.weight'
+fd = output_layer.bias
+fnn = one_hidden_layer_nn(fw,fb,fv,fd,x,sigmoid)
+ferr = obj_1d_approx(fw,fb,fv,fd,x,sigmoid)
+#pars = Flux.params(m)
+#lossfun, gradfun, fg!, p0 = optfuns(loss, pars)
+#res = Optim.optimize(Optim.only_fg!(fg!), p0, Optim.Options(iterations=1000, store_trace=true))
+#noisy = rand(Float32,50,1)
 input_weights_0 = Layer_1.weight.+rand(1)
 input_bias_0 = Layer_1.bias.+rand(1)
 output_weight_0 = vec(output_layer.weight).+rand(1)
@@ -288,18 +314,20 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
     λ = 0.05
     θ = 1e-2
     λ_min = 1e-6
-    ϵ = 1e-4
+    ϵ = 1.2e-4 #if make \epsilon smaller, which might go into LM
     ϵ_H = ϵ
     κ_H = 0.1
     ϵ_AMG = 0.9
     A_AMG = matrix_A_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     P = prolongation(A_AMG, ϵ_AMG)
     R = transpose(P)
-    R = R/sqrt(det(R*R'))
+    σ_R = sqrt(det(R*R'))
+    R = R/σ_R
     H_size = size(P)[2]
     para_size = size(input_biases)[1]
     s_size = 3*para_size+1
     while norm(grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+        @show norm(grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),2)
        g_w = obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)
        g_b = obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)
        g_v = obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)
@@ -310,6 +338,7 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
        R_grad = R_block*g_withoutd
        R_grad_including_d = vcat(R_grad,g_d)
        if l>1 && norm(R_grad_including_d,2) >= κ_H*norm(grad_obj,2) && norm(R_grad,2) > ϵ_H
+        @show norm(R_grad_including_d,2) norm(grad_obj,2) norm(R_grad,2)
         w_H = R*input_weights
         b_H = R*input_biases
         v_H = R*output_weights
@@ -328,9 +357,10 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
         P_block = vcat(hcat(P,zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),P,zeros(size(P)[1],size(P)[2])),hcat(zeros(size(P)[1],size(P)[2]),zeros(size(P)[1],size(P)[2]),P))
         s_h[1:end-1] .= P_block*(s_H[1:end-1])
         s_h[end] = s_H[end]
+        m_h(s_H) = (f_H(w_H,b_H,v_H,d_H,s_H,data,σ)+((R_grad_including_d-grad_H(w_H,b_H,v_H,d_H,s_H,data,σ))'*s_H)[1])/σ_R
         @show s_h[end]
         ρ_numerator = obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ)-obj_1d_approx(input_weights.+s_h[1:para_size],input_biases.+s_h[para_size+1:2*para_size],output_weights.+s_h[2*para_size+1:3*para_size],output_bias.+s_h[end],data,σ)
-        ρ_denominator = m_H(zeros(s_H_0_size))-m_H(s_H)
+        ρ_denominator = m_h(zeros(s_H_0_size))-m_h(s_H)
         ρ = ρ_numerator/ρ_denominator
         @show ρ_numerator ρ_denominator ρ
         if ρ >= η1
@@ -352,10 +382,17 @@ function MLM_1d(input_weights,input_biases,output_weights,output_bias,data,σ,l)
         end
         @show λ
        else
+        #return input_weights,input_biases,output_weights,output_bias
         LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
        end
     end
     return input_weights,input_biases,output_weights,output_bias
 end
 
-MLM_1d(input_weights_0,input_bias_0,output_weight_0,output_bias_0,x',sigmoid,2)
+result = MLM_1d(input_weights_0,input_bias_0,output_weight_0,output_bias_0,x,sigmoid,2)
+mlmw = result[1]
+mlmb = result[2]
+mlmv = result[3]
+mlmd = result[4]
+one_hidden_layer_nn(mlmw,mlmb,mlmv,mlmd,x,sigmoid)
+obj_1d_approx(mlmw,mlmb,mlmv,mlmd,x,sigmoid)
