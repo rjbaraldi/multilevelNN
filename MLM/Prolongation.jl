@@ -8,10 +8,11 @@ using ForwardDiff, SparseArrays
 #Define the prolongation and restriction operator
 #Step 1 Define the matrix A as in meeting notes, grad_obj_1d_* function could be found in the main file
 function matrix_A_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-    ww_term = grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)*grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    bb_term = grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)*grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    vv_term = grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)*grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    return ww_term/norm(grad_obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+bb_term/norm(grad_obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+vv_term/norm(grad_obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)
+    ww_term = obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)'
+    bb_term = obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)'
+    vv_term = obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)'
+    
+    return ww_term/norm(obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+bb_term/norm(obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+vv_term/norm(obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)
 end
 
 function matrix_A_2d(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
@@ -65,7 +66,34 @@ end
             #T[diagind(T)] .= 1
             return T
         end
-    function positive_couplings(A,θ)
+
+function Si_positive(A,θ,i)
+    m,n = size(A)
+    T = copy(A)
+    T = tril(T,-1)+triu(T,1)
+    Sipositive = []
+    for j in 1:n
+        if T[i,j] != 0 && T[i,j] >= θ*abs(find_max_off_diag(T,i))
+            push!(Sipositive,j)
+        end
+    end
+    return Sipositive
+end
+
+function Si_negative(A,θ,i)
+    m,n = size(A)
+    T = copy(A)
+    T = tril(T,-1)+triu(T,1)
+    Sinegative = []
+    for j in 1:n
+        if T[i,j] != 0 && -T[i,j] >= θ*abs(find_max_off_diag(T,i))
+             push!(Sinegative,j)
+        end
+    end
+    return Sinegative
+end
+
+function positive_couplings(A,θ)
         m,n = size(A)
         T = copy(A)
         for i = 1:n
@@ -249,6 +277,23 @@ end
         splitting
     end
     
+    function remove_diag!(a)
+        n = size(a, 1)
+        for i = 1:n
+            for j in nzrange(a, i)
+                if a.rowval[j] == i
+                    a.nzval[j] = 0
+                end
+               end
+        end
+        dropzeros!(a)
+    end
+#give the C/F splitting, where S,T should be sparse matrix and S could be obtained by strong_connection function and T is its transpose.
+    function RS(S,T)
+        remove_diag!(S)
+        RS_CF_splitting(S,T)
+    end
+
     #Step 4 Calculate the prolongation and restriction operator
     #Find the index of non-zero elements in a vector
     function find_nonzero(c)
@@ -273,6 +318,7 @@ end
         end
         return find_nonzero(N[i,:])
     end
+    
     function neighborhood_negative(A,i)
         n=size(A)[2]
         N = copy(A)
@@ -294,27 +340,27 @@ end
         S = strong_connection(A,ϵ_AMG)
         sparse_S = sparse(S)
         sparse_T = sparse(transpose(S))
-        splitting = RS_CF_splitting(sparse_S,sparse_T) #splitting = AlgebraicMultigrid.RS_CF_splitting(sparse_S,sparse_T)
+        splitting = RS(sparse_S,sparse_T) #splitting = AlgebraicMultigrid.RS_CF_splitting(sparse_S,sparse_T)
         n_c = count(!iszero,splitting)
         n_f = size(splitting)[1]
         
        
         #Partition the C ∩ S_i
-        S_positive = positive_couplings(A,ϵ_AMG)
-        S_negative = negative_couplings(A,ϵ_AMG)
         C_set = find_nonzero(splitting)
         P = zeros((n_f,n_c))
         #if i in C, x_F=x_c
         P[C_set,1:n_c] .= I(n_c)
         #if i in F, based on (3.2) in meeting notes
-        for i in findall(==(0), splitting)
-            S_i_positive = intersect(C_set,find_nonzero(S_positive[i,:]))
+        for i in findall(==(0),splitting)
+            S_i_positive = Si_positive(A,ϵ_AMG,i)
             #s_pi_size = size(S_i_positive)[1]
-            S_i_negative = intersect(C_set,find_nonzero(S_negative[i,:]))
+            S_i_negative = Si_negative(A,ϵ_AMG,i)
             #s_ni_size = size(S_i_negative)[1]
             N_i_positive = neighborhood_positive(A,i)
             N_i_negative = neighborhood_negative(A,i)
-            if isempty(S_i_positive) == false
+            P_i_positive = intersect(C_set,S_i_positive)
+            P_i_negative = intersect(C_set,S_i_negative)
+            if isempty(P_i_positive) == false
                 if isempty(N_i_positive) == false
                     beta_numerator = 0
                     for k_p in N_i_positive
@@ -323,14 +369,17 @@ end
                 else
                     beta_numerator = 0
                 end
-                for j_p in S_i_positive
-                    beta_denominator = sum(A[i,j_p])
+                beta_denominator = 0
+                for j_p in P_i_positive
+                    beta_denominator += A[i,j_p]
+                end
                     beta_i = beta_numerator/beta_denominator
-                    j_p_s = findall(x -> x==j_p,S_i_positive)
+                for j_p in P_i_negative
+                    j_p_s = findall(x -> x==j_p,C_set)
                     P[i,j_p_s] .= -beta_i*A[i,j_p]/A[i,i]
                 end
             end
-            if isempty(S_i_negative) == false
+            if isempty(P_i_negative) == false
                 if isempty(N_i_negative) == false
                     alpha_numerator = 0
                     for k_n in N_i_negative
@@ -339,11 +388,14 @@ end
                 else
                     alpha_numerator = 0
                 end
-                for j_n in S_i_negative
-                    alpha_denominator = sum(A[i,j_n])
-                    alpha_i = alpha_numerator/alpha_denominator
-                    j_n_s = findall(x -> x==j_n,S_i_negative)
-                    P[i,j_n_s] .= -alpha_i*A[i,j_n]/A[i,i]
+                alpha_denominator = 0
+                for j_n in P_i_negative
+                    alpha_denominator += A[i,j_n]
+                end
+                alpha_i = alpha_numerator/alpha_denominator
+                for j_n in P_i_negative    
+                j_n_s = findall(x -> x==j_n,C_set)
+                P[i,j_n_s] .= -alpha_i*A[i,j_n]/A[i,i]
                 end
             end
         end
