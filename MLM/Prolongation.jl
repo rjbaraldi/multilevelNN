@@ -1,33 +1,11 @@
 export prolongation
-#In this file, we give the prolongation,restriction operators and the C/F splitting.
+#In this file, we give the prolongation,restriction operators and the C/F with respect to the known A
 using Optim, Flux
 using Random,Printf
 using LinearAlgebra, LinearOperators
 using AlgebraicMultigrid, Krylov
 using ForwardDiff, SparseArrays
-#Define the prolongation and restriction operator
-#Step 1 Define the matrix A as in meeting notes, grad_obj_1d_* function could be found in the main file
-function matrix_A_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-    ww_term = obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    bb_term = obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    vv_term = obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)*obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ)'
-    
-    return ww_term/norm(obj_1d_approx_w(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+bb_term/norm(obj_1d_approx_b(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)+vv_term/norm(obj_1d_approx_v(input_weights,input_biases,output_weights,output_bias,data,σ),Inf)
-end
-
-function matrix_A_2d(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
-    w1_grad = obj_2d_approx_w1(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
-    w2_grad = obj_2d_approx_w2(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
-    b_grad = obj_2d_approx_b(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
-    v_grad = obj_2d_approx_v(input_weights,input_biases,output_weights,output_bias,x1,x2,σ)
-    w1_term = w1_grad*w1_grad'/norm(w1_grad,Inf)
-    w2_term = w2_grad*w2_grad'/norm(w2_grad,Inf)
-    b_term = b_grad*b_grad'/norm(b_grad,Inf)
-    v_term = v_grad*v_grad'/norm(v_grad,Inf)
-    return w1_term+w2_term+b_term+v_term
-end
-
-#Step 2 Define the classical strength of connection
+#Step 1 Define the classical strength of connection
 #Principle: |A[i,j]| >= theta * max(|A[i,k]|), where k != i 
 #Parameters
 #----------
@@ -36,37 +14,37 @@ end
 #----------
 #Returns
 #T: Matrix graph defining strong connections. T[i,j]=1 if vertex i is strongly influenced by vertex j; otherwise, T[i,j]=0
-    function find_max_off_diag(A, i)
-        #remove the diagonal elements in A
-           A = tril(A,-1)+triu(A,1)
-           max_row = maximum(abs.(A)[i,:])
-           return max_row
-        end
+function find_max_off_diag(A, i)
+    #remove the diagonal elements in A
+    A = tril(A,-1)+triu(A,1)
+    max_row = maximum(abs.(A)[i,:])
+    return max_row
+end
         
         
-        function find_max(A, i)
-           return maximum(abs.(A)[i,:])
-        end
+function find_max(A, i)
+    return maximum(abs.(A)[i,:])
+end
         
         
-        function strong_connection(A,θ)
-            m,n = size(A)
-            T = copy(A)
-            for i = 1:n
-                _m = find_max_off_diag(T,i)
-                threshold = θ*_m
-                for j in 1:m
-                    if abs(T[i,j]) >= threshold
-                        T[i,j] = 1
-                    else
-                        T[i,j] = 0
-                    end
-                end
+function strong_connection(A,θ)
+    m,n = size(A)
+    T = copy(A)
+    for i = 1:n
+        _m = find_max_off_diag(T,i)
+        threshold = θ*_m
+        for j in 1:m
+            if abs(T[i,j]) >= threshold
+                T[i,j] = 1
+            else
+                T[i,j] = 0
             end
-            #T[diagind(T)] .= 1
-            return T
         end
-
+    end
+    #T[diagind(T)] .= 1
+    return T
+end
+#S_i_+ = {j in N_i,i strongly positively coupled to j} 
 function Si_positive(A,θ,i)
     m,n = size(A)
     T = copy(A)
@@ -127,7 +105,7 @@ function positive_couplings(A,θ)
         return T
     end
     
-    #Step 3 Compute a C/F splitting using Ruge-Stuben coarsening
+    #Step 2 Compute a C/F splitting using Ruge-Stuben coarsening
     #Parameters
     #----------
     #S: strength of connection matrix indicating the strength between nodes i and j (S[i,j])
@@ -136,7 +114,7 @@ function positive_couplings(A,θ)
     #splitting: Array of length of S of ones (coarse) and zeros (fine) 
     ########
     #when we want to use RS_CF_splitting function to get the C/F-splitting, the input S is just from the strong_connection function, but we need to sparse it, and T is just the tranpose of S, which we also need to sparse it.
-    #the following function RS_CF_splitting is cited from AlgebraicMultigrid package
+    #the following function RS_CF_splitting is cited from AlgebraicMultigrid package 
     const F_NODE = 0
     const C_NODE = 1
     const U_NODE = 2
@@ -288,13 +266,13 @@ function positive_couplings(A,θ)
         end
         dropzeros!(a)
     end
-#give the C/F splitting, where S,T should be sparse matrix and S could be obtained by strong_connection function and T is its transpose.
+
     function RS(S,T)
         remove_diag!(S)
         RS_CF_splitting(S,T)
     end
 
-    #Step 4 Calculate the prolongation and restriction operator
+    #Step 3 Calculate the prolongation and restriction operator
     #Find the index of non-zero elements in a vector
     function find_nonzero(c)
         a = similar(c, Int)
@@ -405,4 +383,3 @@ function positive_couplings(A,θ)
     function restriction(A,ϵ_AMG,σ_R)
         return σ_R*transpose(prolongation(A,ϵ_AMG))
     end
-
