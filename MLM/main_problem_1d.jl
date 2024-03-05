@@ -180,13 +180,14 @@ function obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     return loss+penalty
 end
 
+
 function Bk(input_weights,input_biases,output_weights,output_bias,data,σ)
     F_w = zeros(1,size(input_weights)[1])
     F_b = zeros(1,size(input_biases)[1])
     F_v = zeros(1,size(output_weights)[1])
     F_d = zeros(1,size(output_bias)[1])
     λ_p = 0.1*size(data)[1]
-    for i in 1:size(data)[1]
+    for i in 2:size(data)[1]-1
     F_w_i = ForwardDiff.jacobian(input_weights ->nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data[i],σ),input_weights)
     F_b_i = ForwardDiff.jacobian(input_biases -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data[i],σ),input_biases)
     F_v_i = ForwardDiff.jacobian(output_weights -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data[i],σ),output_weights)
@@ -208,8 +209,9 @@ function Bk(input_weights,input_biases,output_weights,output_bias,data,σ)
     dN_0 = hcat(N_w_0,N_b_0,N_v_0,N_d_0)
     dN_end = hcat(N_w_end,N_b_end,N_v_end,N_d_end)
     penalty_term = dN_0'*dN_0+dN_end'*dN_end
-    return loss_term/(size(data)[1]-2)+penalty_term/(λ_p*2)
+    return loss_term/(size(data)[1]-2)+penalty_term*λ_p/2
 end
+
 
 
 function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
@@ -219,28 +221,23 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     γ2 = 0.5
     γ3 = 1.5
     λ = 0.05
-    θ = 1e-2
     λ_min = 1e-6
-    ϵ = 1e-4
+    ϵ = 1e-2
     s_size = 3*size(output_weights)[1]+1
     para_size = size(output_weights)[1]
     #give an initial step sk
-    s = 0.01*ones(s_size)
+    s = 0.001*ones(s_size)
     g_1 = possion_1d(constant(1))[2]
     #g_1_data = g_1.(data[2:end-1])
     
-    while norm(grad_obj_1d_approx(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+        @show norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2)
         g_w = obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
         g_b = obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
         g_v = obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
         g_d = obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
         grad_obj = vcat(g_w,g_b,g_v,g_d)
         F(input_weights,input_biases,output_weights,output_bias,data,σ) = g_1.(data)+nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ)
-        Fk = F(input_weights,input_biases,output_weights,output_bias,data,σ)
-        F_w = nn_lap1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
-        F_b = nn_lap1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
-        F_v = nn_lap1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
-        F_d = nn_lap1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
       
         B_k = Bk(input_weights,input_biases,output_weights,output_bias,data,σ)
         
@@ -248,21 +245,16 @@ function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
         @show f
         m_h(s_h) = f+(grad_obj'*s_h)[1]+s_h'*B_k*s_h/2+(λ*norm(s_h,2)^2)/2
         m_s(s_h) = ForwardDiff.gradient(s_h->m_h(s_h),s_h)
-        tolence_con = norm(m_s(s),2)/norm(s,2)
-        @show tolence_con
+        #tolence_con = norm(m_s(s),2)/norm(s,2)
+        #@show tolence_con
         s_0 = copy(s)
-        if tolence_con > θ
-            
-            s = Optim.minimizer(optimize(m_h, s)) #we can choose different values for the last two parameters 
-        else
-            
-            s = s
-        end
+        #while tolence_con > θ   
+            s = Optim.minimizer(optimize(m_h, s_0)) #we can choose different values for the last two parameters 
+        #end
         s_w = s[1:para_size]
         s_b = s[para_size+1:2*para_size]
         s_v = s[2*para_size+1:3*para_size]
         s_d = s[end]
-        @show s_d
         ρ_numerator = obj_1d(input_weights.+s_0[1:para_size],input_biases.+s_0[1+para_size:2*para_size],output_weights.+s_0[2*para_size+1:3*para_size],output_bias.+s_0[end],data,σ)-obj_1d(input_weights.+s_w,input_biases.+s_b,output_weights.+s_v,output_bias.+s_d,data,σ)
         ρ_denominator = m_h(s_0)-m_h(s)
         ρ = ρ_numerator/ρ_denominator
