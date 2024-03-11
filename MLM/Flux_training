@@ -7,16 +7,17 @@ function initial_guess(
     x,
     real_func,#real solution of PDEs
     learning_rate,
-    n#the maximum value of epoch
+    n,#the maximum value of epoch
+    m,#data dimension
     )
-    if size(x)[2] == 2
+    if m == 2
         Hidden_Layer = Flux.Dense(2=>r,σ)
     else
         Hidden_Layer = Flux.Dense(1=>r,σ)
     end
     Output_Layer = Flux.Dense(r=>1,identity)
     Model = Flux.Chain(Hidden_Layer,Output_Layer)
-    y = real_func(x)
+    y = real_func.(x)
     #reshape the output vector
     yy = zeros(1,size(y)[1])
     for i in 1:size(x)[1]
@@ -31,9 +32,9 @@ function initial_guess(
             yhat = m(x')
             Flux.Losses.mse(yhat,yy)
         end
-        Flux.update!(optim,model_1d,grads[1])
+        Flux.update!(optim,Model,grads[1])
         push!(losses,loss)
         (epoch %200 ==0) && @info @sprintf "%d  %8.3e" epoch losses[end] 
     end
-    return Hidden_Layer.weight, Hidden_Layer.bias, Output_Layer.weight, Output_Layer.bias
+    return Hidden_Layer.weight, Hidden_Layer.bias, vec(Output_Layer.weight), Output_Layer.bias
 end
