@@ -84,7 +84,7 @@ end
 nn_lap1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights ->nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
 nn_lap1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
 nn_lap1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
-nn_lap1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias -> nn_lap1D_x(input_biases,input_biases,output_weights,output_bias,data,σ),output_bias)
+nn_lap1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
 
 
 
