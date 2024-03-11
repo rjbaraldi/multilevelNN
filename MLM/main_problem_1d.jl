@@ -249,6 +249,24 @@ function J_2(input_weights,input_biases,output_weights,output_bias,data,σ)
     return hcat(F_2w(input_weights,input_biases,output_weights,output_bias,data,σ),F_2b(input_weights,input_biases,output_weights,output_bias,data,σ),F_2v(input_weights,input_biases,output_weights,output_bias,data,σ),F_2d(input_weights,input_biases,output_weights,output_bias,data,σ))
 end
 
+function mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
+    N_D = length(data)-2
+    N_BC = 2
+    λ_p = 0.1*length(data)
+    first_term = 0
+    for i in 2:length(data)-1
+        F1 = F_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
+        J1 = J_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
+        first_term += norm(F1,2)^2+2*(J1'*F1)'*s+s'*J1'*J1*s
+    end
+    F20 = F_2(input_weights,input_biases,output_weights,output_bias,data[1],σ)
+    F2e = F_2(input_weights,input_biases,output_weights,output_bias,data[end],σ)
+    J20 = J_2(input_weights,input_biases,output_weights,output_bias,data[1],σ)
+    J2e = J_2(input_weights,input_biases,output_weights,output_bias,data[end],σ)
+    second_term = norm(F20,2)^2+2*(J20'*F20)'*s+s'*J20'*J20*s+norm(F2e,2)^2+2*(J2e'*F2e)'*s+s'*J2e'*J2e*s
+    return first_term/(2*N_D)+λ_p*second_term/(2*N_BC)+λ*norm(s,2)^2
+end
+
 function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     η1 = 0.1
     η2 = 0.75
