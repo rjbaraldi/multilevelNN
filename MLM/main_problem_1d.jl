@@ -1,3 +1,4 @@
+#More details in section 9 in our meeting notes, which is already updated on Overleaf.
 #In this file, we give the main problem we consider and give the construction of neural neywork with only one hidden layer
 #We consider the unconstrained problem
 #min_x f(x), where f is a twice-continuously differentiable objective function which maps from Rn into R, and is bounded below
@@ -213,6 +214,40 @@ function Bk(input_weights,input_biases,output_weights,output_bias,data,σ)
 end
 
 
+function F_1(input_weights,input_biases,output_weights,output_bias,data,σ)
+    g_1 = possion_1d(constant(1))[2] #hereafter, the "constant(1)" could be changed to another function, which is the real solution of PDE.
+    if length(data) == 1
+        return g_1(data).+nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ)
+    else
+        return g_1.(data)+nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ)
+    end
+end
+
+function F_2(input_weights,input_biases,output_weights,output_bias,data,σ)
+    g_2 = possion_1d(constant(1))[3]
+    if length(data) == 1
+        return g_2(data).-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)
+    else
+        return g_2.(data)-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)
+    end
+end
+
+
+function J_1(input_weights,input_biases,output_weights,output_bias,data,σ)
+    F_1w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+    F_1b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+    F_1v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+    F_1d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+    return hcat(F_1w(input_weights,input_biases,output_weights,output_bias,data,σ),F_1b(input_weights,input_biases,output_weights,output_bias,data,σ),F_1v(input_weights,input_biases,output_weights,output_bias,data,σ),F_1d(input_weights,input_biases,output_weights,output_bias,data,σ))
+end
+
+function J_2(input_weights,input_biases,output_weights,output_bias,data,σ)
+    F_2w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+    F_2b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+    F_2v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+    F_2d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+    return hcat(F_2w(input_weights,input_biases,output_weights,output_bias,data,σ),F_2b(input_weights,input_biases,output_weights,output_bias,data,σ),F_2v(input_weights,input_biases,output_weights,output_bias,data,σ),F_2d(input_weights,input_biases,output_weights,output_bias,data,σ))
+end
 
 function LM_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     η1 = 0.1
