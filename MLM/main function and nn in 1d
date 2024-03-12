@@ -1,0 +1,106 @@
+#Main problem and function in 1D
+#In this file, we give the main problem we consider and give the construction of neural neywork with only one hidden layer
+#We consider the unconstrained problem
+#min_x f(x), where f is a twice-continuously differentiable objective function which maps from Rn into R, and is bounded below
+#We use the trust-region methods to solve it, to this end, we need to solve the problem 
+#min_{||s||<=Δ_k} m_k(xk+s) = min_{||s||<=Δ_k} f(xk) + J(xk)'*s + 1/2 s'*H_k*s, 
+#where J(xk) is the gradient of f,i.e. ∇f(xk); H_k is the Hessian matrix or its approximation, for instance, J(xk)'*J(xk)
+#Indeed, at each iteration, a step s is computed as an approximate solution of
+#min_{||s||<=Δ_k} f(xk)+J(xk)'*s+1/2 s'*H_k*s+1/2 λ||s||^2, where λ>0 is a regularization parameter.
+#In particular, we use the above optimization problem to train the neural network, which can approximate the solution of PDEs.
+#Consider the PDEs as follows:
+#D(x,u(x))=g_1(x), x\in Ω, BC(x,u(x))=g_2(x), x\in ∂Ω,
+#where Ω is an open connected subset of Rn, n>=1, ∂Ω is the boundary of Ω, D is a differential operator, BC is an operator defining the boundary conditions.
+#g_1,g_2 :Rn -> R are given functions.
+#First, let's just consider an one-hidden-layer neural network with r nodes in the hidden layer. 
+#Let v:=[v_1,...,v_r]^T be the output weights, w_i:=[w_i1,...,w_ir]^T be the input weights, for any i=1,...,n,
+#b:=[b_1,b_2,...,b_r]^T be the biases of the hidden nodes, d be the output bias, p:=[v,w_1,...,w_n,b,d]^T be the stacked vectors of weights and biases.
+#We denote the output as N(p,x;r), which can be written as
+#N(p,x;r)=∑_{i=1}^{r}v_i * σ(∑_{j=1}^{n}w_{ji}x_j+b_i)+d
+#Training phase then can be expressed as
+#min_{p} L(p,x) = 1/(2*N_D)\sum_{i=1}^{N_D}||D(x_Di,N(p,x_Di;r))-g_1(x_Di)||^2+(λ_p)/(2*N_BC)\sum_{i=1}^{N_BC}||BC(x_BCi,N(p,x_BCi;r))-g_2(x_BCi)||^2
+#where {x_BCi}_{i=1}^{N_BC} denote the boundary training data on u(x), and {x_Di}_{i=1}^{N_D} specify the collocations points for D(x,u(x)), λ_p>0 is the penalty parameter
+
+###Arguments
+
+# 'obj_func::AbstractNLPModel': the objective function we want to optimize
+# 'λk': a regularization parameter 
+# 'options::SolverOptions': a structure containing algorithmic Parameters
+
+###keyword Arguments
+#'p0::AbstractVector': an initial guess
+#'tol': relative stopping tolerence, i.e. ||∇_s m_k(xk,sk)+λk*sk||/||sk|| <= tol
+###Return Arguments
+#'sk': the final iterate
+
+###Reference 
+# H. Calandra, S. Gratton, E. Riccietti and X. Vasseur. On a multilevel Levenberg Marquardt method for the training of artificial neural networks and its application to the solution of partial differential equations
+using LeastSquaresOptim
+using PyPlot
+using DifferentialEquations
+using Optim, Flux
+using Random,Printf
+using LinearAlgebra, LinearOperators
+using AlgebraicMultigrid, Krylov
+using ForwardDiff, SparseArrays
+using Optimization, ProgressMeter
+using Zygote, FluxOptTools, Statistics
+
+function one_hidden_layer_nn(
+    input_weights,#input_weights is nodes_num*1
+    input_biases,#input_biases is nodes_num*1
+    output_weights,#output_weights is nodes_num*1
+    output_bias,#output_weights is a scalar
+    data,#sampled nD-PDEs variables matrix, 
+    σ,#activation function,
+    )
+    inner =   input_weights * transpose(data)  .+ input_biases
+    active = σ.(inner)
+    output = transpose(output_weights) * active .+ output_bias
+    return output'
+end
+nn_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights ->one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+nn_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases -> one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+nn_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights -> one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+nn_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias -> one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+
+function second_derivative(σ)
+    σ_1(x) = ForwardDiff.derivative(σ,x)
+    σ_2(x) = ForwardDiff.derivative(σ_1,x)
+    return σ_2
+end
+
+function nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ)
+    inner =   input_weights * transpose(data)  .+ input_biases
+    active = second_derivative(σ).(inner)
+    outweight = output_weights.*input_weights.^2
+    output = transpose(outweight) * active
+    return output'
+end 
+
+nn_lap1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights ->nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+nn_lap1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+nn_lap1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+nn_lap1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_bias -> nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+
+
+
+function obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+    g_1 = possion_1d(constant(1))[2] #the right-hand side could choose other PDEs
+    g_2 = possion_1d(constant(1))[3]
+    N_u = size(data)[1]-2
+    g_1_data = g_1.(data[2:end-1])
+    loss = norm(g_1_data+nn_lap1D_x(input_weights,input_biases,output_weights,output_bias,data[2:end-1],σ),2)^2
+    loss = loss/(2*N_u)
+    λ_p = 0.1*size(data)[1]
+    penalty = norm(g_2(data[1])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[1],2)^2+norm(g_2(data[end])-one_hidden_layer_nn(input_weights,input_biases,output_weights,output_bias,data,σ)[end],2)^2
+    penalty = λ_p*penalty/4
+    return loss+penalty
+end
+
+obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
+obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(input_biases->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
+obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_weights->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
+obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.gradient(output_bias->obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),output_bias)
+grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ) = vcat(obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ),obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)) 
+
