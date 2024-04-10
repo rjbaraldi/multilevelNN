@@ -175,5 +175,18 @@ rv_200 = rand(200,1)
 rd_200 = rand(1)
 @time begin
     lrw_200,lrb_200,lrv_200,lrd_200 = LM_1D(rw_200,rb_200,rv_200,rd_200,x,sigmoid)
-    lre = obj_1d(lrw_200,lrb_200,lrv_200,lrd_200,x,sigmoid)
+    lre_200 = obj_1d(lrw_200,lrb_200,lrv_200,lrd_200,x,sigmoid)
+end
+
+
+lower_bound = -1
+upper_bound = 3
+rw_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100,1)
+rb_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100)
+rv_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100,1)
+rd_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(1)
+@time begin
+    lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100 = LM_1D(rw_lu_100,rb_lu_100,rv_lu_100,rd_lu_100,x,sigmoid)
+    lre_lu_200 = obj_1d(lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100,x,sigmoid)
+    grad_lu_200 = norm(grad_obj_1d(lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100,x,sigmoid),2)
 end
