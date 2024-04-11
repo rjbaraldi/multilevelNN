@@ -112,7 +112,62 @@ function LM_1D(input_weights,input_biases,output_weights,output_bias,data,σ)
     γ2 = 0.5
     γ3 = 1.5
     λ = 0.05
-    λ_min = 1e-6
+    λ_min = 1e-4
+    ϵ = 1e-4
+    s_size = 3*size(output_weights)[1]+1
+    para_size = size(output_weights)[1]
+    #give an initial step sk
+    s = 0.001*ones(s_size)
+    iteration = 0
+    max_iteration = 1000
+    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) >= ϵ
+        @show obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        mk(s) = mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
+        #change to solve the linear system
+        #s =  Optim.minimizer(optimize(mk, s, LBFGS(); autodiff =:forward))
+        #@show s
+        
+        s = vec(cholesky(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ))\((-1).*(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ))))
+       
+        #@show s
+        fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
+        @show fk(s) fk(zeros(s_size))
+        ρkn = fk(zeros(s_size))-fk(s)
+        ρkd = mk(zeros(s_size))-mk(s)
+        ρ = ρkn/ρkd
+        @show ρkn ρkd ρ
+        if ρ >= η1
+            input_weights = input_weights.+s[1:para_size]
+            input_biases = input_biases.+s[para_size+1:2*para_size]
+            output_weights = output_weights.+s[2*para_size+1:3*para_size]
+            output_bias = output_bias.+s[end]
+            if ρ >= η2
+                λ = max(λ_min,γ2*λ)
+            else
+                λ = max(λ_min,γ1*λ)
+            end
+        else
+            input_weights = input_weights
+            input_biases = input_biases
+            output_weights = output_weights
+            output_bias = output_bias
+            λ = γ3*λ
+        end
+        iteration += 1
+    end
+    println("Iteration: $iteration")
+    @show norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2)
+    return input_weights,input_biases,output_weights,output_bias
+end
+
+function LM_1D_CG(input_weights,input_biases,output_weights,output_bias,data,σ)
+    η1 = 0.1
+    η2 = 0.75
+    γ1 = 0.85
+    γ2 = 0.5
+    γ3 = 1.5
+    λ = 0.05
+    λ_min = 1e-4
     ϵ = 1e-6
     s_size = 3*size(output_weights)[1]+1
     para_size = size(output_weights)[1]
@@ -126,7 +181,63 @@ function LM_1D(input_weights,input_biases,output_weights,output_bias,data,σ)
         #change to solve the linear system
         #s =  Optim.minimizer(optimize(mk, s, LBFGS(); autodiff =:forward))
         #@show s
-        s = vec(cholesky(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ))\((-1).*(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ))))
+        
+        s = cg(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[1]
+        @show cg(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))
+        #@show s
+        fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
+        @show fk(s) fk(zeros(s_size))
+        ρkn = fk(zeros(s_size))-fk(s)
+        ρkd = mk(zeros(s_size))-mk(s)
+        ρ = ρkn/ρkd
+        @show ρkn ρkd ρ
+        if ρ >= η1
+            input_weights = input_weights.+s[1:para_size]
+            input_biases = input_biases.+s[para_size+1:2*para_size]
+            output_weights = output_weights.+s[2*para_size+1:3*para_size]
+            output_bias = output_bias.+s[end]
+            if ρ >= η2
+                λ = max(λ_min,γ2*λ)
+            else
+                λ = max(λ_min,γ1*λ)
+            end
+        else
+            input_weights = input_weights
+            input_biases = input_biases
+            output_weights = output_weights
+            output_bias = output_bias
+            λ = γ3*λ
+        end
+        iteration += 1
+    end
+    println("Iteration: $iteration")
+    @show norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2)
+    return input_weights,input_biases,output_weights,output_bias
+end
+
+function LM_1D_CGLS(input_weights,input_biases,output_weights,output_bias,data,σ)
+    η1 = 0.1
+    η2 = 0.75
+    γ1 = 0.85
+    γ2 = 0.5
+    γ3 = 1.5
+    λ = 0.05
+    λ_min = 1e-4
+    ϵ = 1e-6
+    s_size = 3*size(output_weights)[1]+1
+    para_size = size(output_weights)[1]
+    #give an initial step sk
+    s = 0.001*ones(s_size)
+    iteration = 0
+    max_iteration = 1000
+    ρkn = 0.5
+    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) >= ϵ && ρkn != 0 
+        @show obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        mk(s) = mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
+        
+        s = cgls(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[1]
+        @show cgls(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))
+     
         #@show s
         fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
         @show fk(s) fk(zeros(s_size))
@@ -161,32 +272,23 @@ end
 
 ############Test#################
 x = collect(LinRange(0,1,41))
-rw = rand(100,1)
-rb = rand(100)
-rv = rand(100,1)
-rd = rand(1)
-@time begin
-    lrw,lrb,lrv,lrd = LM_1D(rw,rb,rv,rd,x,sigmoid)
-    lre = obj_1d(lrw,lrb,lrv,lrd,x,sigmoid)
-end
-rw_200 = rand(200,1)
-rb_200 = rand(200)
-rv_200 = rand(200,1)
-rd_200 = rand(1)
-@time begin
-    lrw_200,lrb_200,lrv_200,lrd_200 = LM_1D(rw_200,rb_200,rv_200,rd_200,x,sigmoid)
-    lre_200 = obj_1d(lrw_200,lrb_200,lrv_200,lrd_200,x,sigmoid)
-end
+yreal = -x.^2/2
+lower_bound = -5
+upper_bound = 5
+rw_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500,1)
+rb_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500)
+rv_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500,1)
+rd_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(1)
 
-
-lower_bound = -1
-upper_bound = 3
-rw_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100,1)
-rb_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100)
-rv_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(100,1)
-rd_lu_100 = lower_bound.+(upper_bound-lower_bound).*rand(1)
 @time begin
-    lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100 = LM_1D(rw_lu_100,rb_lu_100,rv_lu_100,rd_lu_100,x,sigmoid)
-    lre_lu_200 = obj_1d(lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100,x,sigmoid)
-    grad_lu_200 = norm(grad_obj_1d(lrw_lu_100,lrb_lu_100,lrv_lu_100,lrd_lu_100,x,sigmoid),2)
+    lrw_lu_500_d,lrb_lu_500_d,lrv_lu_500_d,lrd_lu_500_d = LM_1D(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
+    lrerr_lu_500_d = norm(vec(one_hidden_layer_nn(lrw_lu_100_d,lrb_lu_500_d,lrv_lu_500_d,lrd_lu_500_d,x,sigmoid).-yreal),2)
+end
+@time begin
+    lrw_lu_500_cg,lrb_lu_500_cg,lrv_lu_500_cg,lrd_lu_500_cg = LM_1D_CG(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
+    lrerr_lu_500_cg = norm(vec(one_hidden_layer_nn(lrw_lu_500_cg,lrb_lu_500_cg,lrv_lu_500_cg,lrd_lu_500_cg,x,sigmoid).-yreal),2)
+end
+@time begin
+    lrw_lu_500_cgls,lrb_lu_500_cgls,lrv_lu_500_cgls,lrd_lu_500_cgls = LM_1D_CGLS(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
+    lrerr_lu_500_cgls = norm(vec(one_hidden_layer_nn(lrw_lu_500_cgls,lrb_lu_500_cgls,lrv_lu_500_cgls,lrd_lu_500_cgls,x,sigmoid).-yreal),2)
 end
