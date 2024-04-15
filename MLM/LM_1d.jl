@@ -313,10 +313,13 @@ function grad_check(input_weights,input_biases,output_weights,output_bias,θ,dat
     gradapprox[size_w+i] = gb(e)
     gradapprox[size_w+size_b+i] = gv(e)
     end
-    @show gradapprox[503] gradapprox[503]-grad[503]
     fd(θ) = obj_1d(input_weights,input_biases,output_weights,output_bias.+θ,data,σ)
     gd(θ) = (fd(θ)-fd(-θ))/(2*θ)
     gradapprox[end] = gd(θ)
     @show norm(gradapprox.- grad,2) norm(grad,2) norm(gradapprox,2)
 return norm(grad.-gradapprox,2)/(norm(grad,2)+norm(gradapprox))
 end
+
+
+##########TEST#############
+grad_check_500_cg = grad_check(lrw_lu_500_cg,lrb_lu_500_cg,lrv_lu_500_cg,lrd_lu_500_cg,1e-4,x,sigmoid)
