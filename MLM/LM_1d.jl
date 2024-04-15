@@ -298,24 +298,24 @@ function grad_check(input_weights,input_biases,output_weights,output_bias,θ,dat
     size_w = size(input_weights)[1]
     size_b = size(input_biases)[1]
     size_v = size(output_weights)[1]
-    error = 0
     grad = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     gradapprox = zeros(size_w+size_b+size_v+1)
+    e = zeros(size_w)
+    fw(x) = obj_1d(input_weights.+x,input_biases,output_weights,output_bias,data,σ)
+    gw(x) = (fw(x)-fw(-x))/(2*θ)
+    fb(x) = obj_1d(input_weights,input_biases,output_weights.+x,output_bias,data,σ)
+    gb(x) = (fb(x)-fb(-x))/(2*θ)
+    fv(x) = obj_1d(input_weights,input_biases,output_weights,output_bias.+x,data,σ)
+    gv(x) = (fv(x)-fv(-x))/(2*θ)
     for i in 1:size_w
-    ei = zeros(size_w)
-    ei[i] = θ
-    fwi(θ) = obj_1d(input_weights.+ei,input_biases,output_weights,output_bias,data,σ)
-    gwi(θ) = (fwi(θ)-fwi(-θ))/(2*θ)
-    fbi(θ) = obj_1d(input_weights,input_biases,output_weights.+ei,output_bias,data,σ)
-    gbi(θ) = (fbi(θ)-fbi(-θ))/(2*θ)
-    fvi(θ) = obj_1d(input_weights,input_biases,output_weights,output_bias.+ei,data,σ)
-    gvi(θ) = (fvi(θ)-fvi(-θ))/(2*θ)
-    gradapprox[i] = gwi(θ)
-    gradapprox[size_w+i] = gbi(θ)
-    gradapprox[size_w+size_b+i] = gvi(θ)
+    e[i] = θ
+    gradapprox[i] = gw(e)
+    gradapprox[size_w+i] = gb(e)
+    gradapprox[size_w+size_b+i] = gv(e)
     end
     fd(θ) = obj_1d(input_weights,input_biases,output_weights,output_bias.+θ,data,σ)
     gd(θ) = (fd(θ)-fd(-θ))/(2*θ)
     gradapprox[end] = gd(θ)
+    @show norm(gradapprox.- grad,2) norm(grad,2) norm(gradapprox,2)
 return norm(grad.-gradapprox,2)/(norm(grad,2)+norm(gradapprox))
 end
