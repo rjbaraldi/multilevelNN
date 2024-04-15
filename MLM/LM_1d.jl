@@ -293,26 +293,27 @@ end
     lrerr_lu_500_cgls = norm(vec(one_hidden_layer_nn(lrw_lu_500_cgls,lrb_lu_500_cgls,lrv_lu_500_cgls,lrd_lu_500_cgls,x,sigmoid).-yreal),2)
 end
 
-############Gradient check#########
+
 function grad_check(input_weights,input_biases,output_weights,output_bias,θ,data,σ)
     size_w = size(input_weights)[1]
     size_b = size(input_biases)[1]
     size_v = size(output_weights)[1]
     grad = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
     gradapprox = zeros(size_w+size_b+size_v+1)
-    e = zeros(size_w)
     fw(x) = obj_1d(input_weights.+x,input_biases,output_weights,output_bias,data,σ)
     gw(x) = (fw(x)-fw(-x))/(2*θ)
-    fb(x) = obj_1d(input_weights,input_biases,output_weights.+x,output_bias,data,σ)
+    fb(x) = obj_1d(input_weights,input_biases.+x,output_weights,output_bias,data,σ)
     gb(x) = (fb(x)-fb(-x))/(2*θ)
-    fv(x) = obj_1d(input_weights,input_biases,output_weights,output_bias.+x,data,σ)
+    fv(x) = obj_1d(input_weights,input_biases,output_weights.+x,output_bias,data,σ)
     gv(x) = (fv(x)-fv(-x))/(2*θ)
     for i in 1:size_w
+    e = zeros(size_w)
     e[i] = θ
     gradapprox[i] = gw(e)
     gradapprox[size_w+i] = gb(e)
     gradapprox[size_w+size_b+i] = gv(e)
     end
+    @show gradapprox[503] gradapprox[503]-grad[503]
     fd(θ) = obj_1d(input_weights,input_biases,output_weights,output_bias.+θ,data,σ)
     gd(θ) = (fd(θ)-fd(-θ))/(2*θ)
     gradapprox[end] = gd(θ)
