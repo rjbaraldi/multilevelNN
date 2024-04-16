@@ -36,7 +36,7 @@ end
 function mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
     N_D = length(data)-2
     N_BC = 2
-    λ_p = 0.1*length(data)
+    λ_p = 0.1
     first_term = 0
     for i in 2:length(data)-1
         F1 = F_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
@@ -54,7 +54,7 @@ end
 function line_mk(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
     N_D = length(data)-2
     N_BC = 2
-    λ_p = 0.1*length(data)
+    λ_p = 0.1
     first_term = zeros(size(s)[1])
     for i in 2:length(data)-1
         F1 = F_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
@@ -72,7 +72,7 @@ end
 function line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)
     N_D = length(data)-2
     N_BC = 2
-    λ_p = 0.1*length(data)
+    λ_p = 0.1
     first_term = zeros(s_size,s_size)
     for i in 2:length(data)-1
         #F1 = F_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
@@ -89,7 +89,7 @@ end
 function line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)
     N_D = length(data)-2
     N_BC = 2
-    λ_p = 0.1*length(data)
+    λ_p = 0.1
     first_term = zeros(s_size)
     for i in 2:length(data)-1
         F1 = F_1(input_weights,input_biases,output_weights,output_bias,data[i],σ)
