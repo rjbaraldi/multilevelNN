@@ -1,65 +1,68 @@
 #In this file, we give the codes for MLM in 1D
 
-function matrix_A_1D(input_weights,input_biases,output_weights,output_bias,data,σ)
+
+function matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
+    si = size(data)[1]-2
+    λ_p = 0.1
     F_1w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
     F_1b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
     F_1v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights->F_1(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
     F_2w(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_weights->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),input_weights)
     F_2b(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(input_biases->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),input_biases)
     F_2v(input_weights,input_biases,output_weights,output_bias,data,σ) = ForwardDiff.jacobian(output_weights->F_2(input_weights,input_biases,output_weights,output_bias,data,σ),output_weights)
-    J1w = zeros(1,size(input_weights)[1])
-    J1b = J1w
-    J1v = J1b
-    for i in 2:length(data)-1
-        J1w .+= F_1w(input_weights,input_biases,output_weights,output_bias,data[i],σ)
-        J1b .+= F_1b(input_weights,input_biases,output_weights,output_bias,data[i],σ)
-        J1v .+= F_1v(input_weights,input_biases,output_weights,output_bias,data[i],σ)
-    end
-    J2w = F_2w(input_weights,input_biases,output_weights,output_bias,data[1],σ)+F_2w(input_weights,input_biases,output_weights,output_bias,data[end],σ)
-    J2b = F_2b(input_weights,input_biases,output_weights,output_bias,data[1],σ)+F_2b(input_weights,input_biases,output_weights,output_bias,data[end],σ)
-    J2v = F_2v(input_weights,input_biases,output_weights,output_bias,data[1],σ)+F_2v(input_weights,input_biases,output_weights,output_bias,data[end],σ)
-    Jw = J1w/(2*(length(data)-2))+0.1*length(data)*J2w/4
-    Jb = J1b/(2*(length(data)-2))+0.1*length(data)*J2b/4
-    Jv = J1v/(2*(length(data)-2))+0.1*length(data)*J2v/4
-    return Jw'*Jw/norm(Jw,Inf)+Jb'*Jb/norm(Jb,Inf)+Jv'*Jv/norm(Jv,Inf)
-end
-
-function mH_1d(wh,bh,vh,dh,data,σ,sH,λ,R)
-   wH = R*wh
-   bH = R*bh
-   vH = R*vh
-   dH = dh
-   R_block = vcat(hcat(R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],1)),hcat(zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],1)),hcat(zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],1)),zeros(1,3*size(R)[2]+1))
-   R_block[end,end] = 1
-   first_term = mk_1d(wH,bH,vH,dH,data,σ,sH,λ)
-   second_term = ((R_block*grad_obj_1d(wh,bh,vh,dh,data,σ)-grad_obj_1d(wH,bH,vH,dH,data,σ))'*sH)[1]
-   return first_term+second_term
+    F_1_w = F_1w(input_weights,input_biases,output_weights,output_bias,data[2:end-1],σ)
+    F_1_b = F_1b(input_weights,input_biases,output_weights,output_bias,data[2:end-1],σ)
+    F_1_v = F_1v(input_weights,input_biases,output_weights,output_bias,data[2:end-1],σ)
+    F_2_w = F_2w(input_weights,input_biases,output_weights,output_bias,[data[1],data[end]],σ)
+    F_2_b = F_2b(input_weights,input_biases,output_weights,output_bias,[data[1],data[end]],σ)
+    F_2_v = F_2v(input_weights,input_biases,output_weights,output_bias,[data[1],data[end]],σ)
+    return F_1_w'*F_1_w/(norm(F_1_w,Inf)*si)+F_1_b'*F_1_b/(norm(F_1_b,Inf)*si)+F_1_v'*F_1_v/(norm(F_1_v,Inf)*si)+λ_p*F_2_w'*F_2_w/(norm(F_2_w,Inf)*2)+λ_p*F_2_b'*F_2_b/(norm(F_2_b,Inf)*2)+λ_p*F_2_v'*F_2_v/(norm(F_2_v,Inf)*2)
 end
 
 
 
-function mH_line_A(wh,bh,vh,dh,data,σ,sH,λ,R)
+
+
+function mH_1D(wh,bh,vh,dh,data,σ,sH,λ,R)
+    wH = R*wh
+    bH = R*bh
+    vH = R*vh
+    dH = dh
+    R_grad_w = R*obj_1d_w(wh,bh,vh,dh,data,σ)
+    R_grad_b = R*obj_1d_b(wh,bh,vh,dh,data,σ)
+    R_grad_v = R*obj_1d_v(wh,bh,vh,dh,data,σ)
+    grad_obj_d = obj_1d_d(wh,bh,vh,dh,data,σ)
+    R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
+    first_term = mk_1d(wH,bH,vH,dH,data,σ,sH,λ)
+    second_term =((R_grad-grad_obj_1d(wH,bH,vH,dH,data,σ))'*sH)[1]
+    return first_term+second_term
+ end
+
+function mH_line_A(wh,bh,vh,dh,data,σ,sH_size,λ,R)
    wH = R*wh
    bH = R*bh
    vH = R*vh
    dH = dh
-   sH_size = size(sH)[1] 
    return line_mk_A(wH,bH,vH,dH,data,σ,sH_size,λ)
 end
 
-function mH_line_b(wh,bh,vh,dh,data,σ,sH,λ,R)
+function mH_line_b(wh,bh,vh,dh,data,σ,sH_size,λ,R)
    wH = R*wh
    bH = R*bh
    vH = R*vh
    dH = dh
-   R_block = vcat(hcat(R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],1)),hcat(zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],1)),hcat(zeros(size(R)[1],size(R)[2]),zeros(size(R)[1],size(R)[2]),R,zeros(size(R)[1],1)),zeros(1,3*size(R)[2]+1))
-   R_block[end,end] = 1
-   sH_size = size(sH)[1] 
-   return line_mk_b(wH,bH,vH,dH,data,σ,sH_size,λ)+R_block*grad_obj_1d(wh,bh,vh,dh,data,σ)-grad_obj_1d(wH,bH,vH,dH,data,σ)
+   R_grad_w = R*obj_1d_w(wh,bh,vh,dh,data,σ)
+   R_grad_b = R*obj_1d_b(wh,bh,vh,dh,data,σ)
+   R_grad_v = R*obj_1d_v(wh,bh,vh,dh,data,σ)
+   grad_obj_d = obj_1d_d(wh,bh,vh,dh,data,σ)
+   R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
+   return line_mk_b(wH,bH,vH,dH,data,σ,sH_size,λ)+R_grad-grad_obj_1d(wH,bH,vH,dH,data,σ)
 end
 
 
-function MLM_1D(input_weights,input_biases,output_weights,output_bias,data,σ,l)
+
+
+function MLM_1D_CG(input_weights,input_biases,output_weights,output_bias,data,σ,l)
     η1 = 0.1
     η2 = 0.75
     γ1 = 0.85
@@ -68,84 +71,168 @@ function MLM_1D(input_weights,input_biases,output_weights,output_bias,data,σ,l)
     λ = 0.05
     #θ = 1e-2
     λ_min = 1e-6
-    ϵ = 1e-6
+    ϵ = 1e-4
     ϵ_H = ϵ
     κ_H = 0.1
     ϵ_AMG = 0.9
-    A_AMG = matrix_A_1D(input_weights,input_biases,output_weights,output_bias,data,σ)
-    fA = sparse(A_AMG)
-    fT = sparse(strong_connection(fA,ϵ_AMG)[2])
-    fS = sparse(strong_connection(fA,ϵ_AMG)[1])
-    splitting = AlgebraicMultigrid.RS_CF_splitting(fS,fT)
-    fP = AlgebraicMultigrid.direct_interpolation(fA,fT,splitting)[1]
-    fR = AlgebraicMultigrid.direct_interpolation(fA,fT,splitting)[2]
-    σ_R = sqrt(det(fR*fR'))
-    fR = fR/σ_R
-    R_block = vcat(hcat(fR,zeros(size(fR)[1],size(fR)[2]),zeros(size(fR)[1],size(fR)[2]),zeros(size(fR)[1],1)),hcat(zeros(size(fR)[1],size(fR)[2]),fR,zeros(size(fR)[1],size(fR)[2]),zeros(size(fR)[1],1)),hcat(zeros(size(fR)[1],size(fR)[2]),zeros(size(fR)[1],size(fR)[2]),fR,zeros(size(fR)[1],1)),zeros(1,3*size(fR)[2]+1))
-    P_block = vcat(hcat(fP,zeros(size(fP)[1],size(fP)[2]),zeros(size(fP)[1],size(fP)[2]),zeros(size(fP)[1],1)),hcat(zeros(size(fP)[1],size(fP)[2]),fP,zeros(size(fP)[1],size(fP)[2]),zeros(size(fP)[1],1)),hcat(zeros(size(fP)[1],size(fP)[2]),zeros(size(fP)[1],size(fP)[2]),fP,zeros(size(fP)[1],1)),zeros(1,3*size(fP)[2]+1))
-    R_block[end,end] = 1
-    P_block[end,end] = 1
+    A_try = matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
+    fP = prolongation(A_try,ϵ_AMG)
+    fR = transpose(fP)/norm(fP)
+    fP = transpose(fR)
+    #σ_R = 1
     H_size = size(fP)[2]
     para_size = size(input_biases)[1]
     s_size = 3*para_size+1
-    s = 0.001*ones(s_size)
-    s_H = 0.001*ones(3*H_size+1)
+    
+    sH_size = 3*H_size+1
     while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+        fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
         @show obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ) norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2)
         grad_obj = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-        R_grad = R_block*grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
-        if l>1 && norm(R_grad,2) >= κ_H*norm(grad_obj,2) && norm(R_grad,2) > ϵ_H
-            mH(s_H) = mH_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR)
-            s_H = vec(cholesky(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR))\((-1)*mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR)))
-            s = P_block*s_H
-            mh(s_H) = mH(s_H)/σ_R
-            fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
-            @show fk(s) fk(zeros(s_size))
+        grad_obj_w = obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_b = obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_v = obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_d = obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_w = fR*obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_b = fR*obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_v = fR*obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
+        @show norm(R_grad_w,2)/(κ_H*norm(grad_obj_w,2)) norm(R_grad_b,2)/(κ_H*norm(grad_obj_b,2)) norm(R_grad_v,2)/(κ_H*norm(grad_obj_v,2))
+        if l>1 && norm(R_grad_w,2) >= κ_H*norm(grad_obj_w,2) && norm(R_grad_b,2) >= κ_H*norm(grad_obj_b,2) && norm(R_grad_v,2) >= κ_H*norm(grad_obj_v,2) && norm(R_grad,2) > ϵ_H
+            mH(s_H) = mH_1D(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR)
+            s_H = cg(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR)))[1]
+            s = vcat(fP*s_H[1:H_size],fP*s_H[H_size+1:2*H_size],fP*s_H[2*H_size+1:3*H_size],s_H[end])
+            mh(s_H) = mH(s_H)
+            #fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
+            #@show fk(s) fk(zeros(s_size))
             ρkn = fk(zeros(s_size))-fk(s)
             ρkd = mh(zeros(3*H_size+1))-mh(s_H)
             ρ = ρkn/ρkd
             @show ρkn ρkd ρ
-            if ρ >= η1
-                input_weights = input_weights.+s[1:para_size]
-                input_biases = input_biases.+s[para_size+1:2*para_size]
-                output_weights = output_weights.+s[2*para_size+1:3*para_size]
-                output_bias = output_bias.+s[end]
-                if ρ >= η2
-                    λ = max(λ_min,γ2*λ)
-                else
-                    λ = max(λ_min,γ1*λ)
-                end
+        else
+            mk(s) = mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
+            s = cg(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[1]
+            @show cg(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[2:end]
+        #@show s
+            ρkn = fk(zeros(s_size))-fk(s)
+            ρkd = mk(zeros(s_size))-mk(s)
+            ρ = ρkn/ρkd
+            @show ρkn ρkd ρ
+        end
+        if ρ >= η1
+            input_weights = input_weights.+s[1:para_size]
+            input_biases = input_biases.+s[para_size+1:2*para_size]
+            output_weights = output_weights.+s[2*para_size+1:3*para_size]
+            output_bias = output_bias.+s[end]
+            if ρ >= η2
+                λ = max(λ_min,γ2*λ)
             else
-                input_weights = input_weights
-                input_biases = input_biases
-                output_weights = output_weights
-                output_bias = output_bias
-                λ = γ3*λ
+                λ = max(λ_min,γ1*λ)
             end
         else
-            input_weights,input_biases,output_weights,output_bias = LM_1D(input_weights,input_biases,output_weights,output_bias,data,σ)
+            input_weights = input_weights
+            input_biases = input_biases
+            output_weights = output_weights
+            output_bias = output_bias
+            λ = γ3*λ
         end
     end
     return input_weights,input_biases,output_weights,output_bias
 end
 
 
-lower_bound = -1
-upper_bound = 3
+function MLM_1D_CGLS(input_weights,input_biases,output_weights,output_bias,data,σ,l)
+    η1 = 0.1
+    η2 = 0.75
+    γ1 = 0.85
+    γ2 = 0.5
+    γ3 = 1.5
+    λ = 0.05
+    #θ = 1e-2
+    λ_min = 1e-6
+    ϵ = 1e-4
+    ϵ_H = ϵ
+    κ_H = 0.1
+    ϵ_AMG = 0.9
+    A_try = matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
+    fP = prolongation(A_try,ϵ_AMG)
+    fR = transpose(fP)/norm(fP)
+    fP = transpose(fR)
+    #σ_R = 1
+    H_size = size(fP)[2]
+    para_size = size(input_biases)[1]
+    s_size = 3*para_size+1
+    
+    sH_size = 3*H_size+1
+    while norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2) > ϵ
+        fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
+        @show obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ) norm(grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ),2)
+        grad_obj = grad_obj_1d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_w = obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_b = obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_v = obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        grad_obj_d = obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_w = fR*obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_b = fR*obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_v = fR*obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
+        @show norm(R_grad_w,2)/(κ_H*norm(grad_obj_w,2)) norm(R_grad_b,2)/(κ_H*norm(grad_obj_b,2)) norm(R_grad_v,2)/(κ_H*norm(grad_obj_v,2))
+        if l>1 && norm(R_grad_w,2) >= κ_H*norm(grad_obj_w,2) && norm(R_grad_b,2) >= κ_H*norm(grad_obj_b,2) && norm(R_grad_v,2) >= κ_H*norm(grad_obj_v,2) && norm(R_grad,2) > ϵ_H
+            mH(s_H) = mH_1D(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR_normalized)
+            s_H = cgls(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR_normalized),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR_normalized)))[1]
+            s = P_block*(s_H)
+            mh(s_H) = mH(s_H)
+            #fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
+            #@show fk(s) fk(zeros(s_size))
+            ρkn = fk(zeros(s_size))-fk(s)
+            ρkd = mh(zeros(3*H_size+1))-mh(s_H)
+            ρ = ρkn/ρkd
+            @show ρkn ρkd ρ
+        else
+            mk(s) = mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
+            s = cgls(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[1]
+            @show cgls(line_mk_A(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ),(-1).*vec(line_mk_b(input_weights,input_biases,output_weights,output_bias,data,σ,s_size,λ)))[2:end]
+        #@show s
+            ρkn = fk(zeros(s_size))-fk(s)
+            ρkd = mk(zeros(s_size))-mk(s)
+            ρ = ρkn/ρkd
+            @show ρkn ρkd ρ
+        end
+        if ρ >= η1
+            input_weights = input_weights.+s[1:para_size]
+            input_biases = input_biases.+s[para_size+1:2*para_size]
+            output_weights = output_weights.+s[2*para_size+1:3*para_size]
+            output_bias = output_bias.+s[end]
+            if ρ >= η2
+                λ = max(λ_min,γ2*λ)
+            else
+                λ = max(λ_min,γ1*λ)
+            end
+        else
+            input_weights = input_weights
+            input_biases = input_biases
+            output_weights = output_weights
+            output_bias = output_bias
+            λ = γ3*λ
+        end
+    end
+    return input_weights,input_biases,output_weights,output_bias
+end
+##########Test#################
+x = collect(LinRange(0,1,41))
+yreal = -x.^2/2
+lower_bound = -5
+upper_bound = 5
 rw_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500,1)
 rb_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500)
 rv_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(500,1)
 rd_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(1)
-#ϵ_AMG = 0.9
-#    A_AMG = matrix_A_1D(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
-#    fA = sparse(A_AMG)
-#    fT = sparse(strong_connection(fA,ϵ_AMG)[2])
-#    fS = sparse(strong_connection(fA,ϵ_AMG)[1])
-#    splitting = AlgebraicMultigrid.RS_CF_splitting(fS,fT)
-#    fP = AlgebraicMultigrid.direct_interpolation(fA,fT,splitting)[1]
-#    fR = AlgebraicMultigrid.direct_interpolation(fA,fT,splitting)[2]
+
 @time begin
-    mrw_lu_500,mrb_lu_500,mrv_lu_500,mrd_lu_500 = MLM_1D(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid,2)
-    mre_lu_500 = obj_1d(mrw_lu_500,mrb_lu_500,mrv_lu_500,mrd_lu_500,x,sigmoid)
-    mrad_lu_500 = norm(grad_obj_1d(mrw_lu_500,mrb_lu_500,mrv_lu_500,mrd_lu_500,x,sigmoid),2)
+    mrw_lu_500_cg,mrb_lu_500_cg,mrv_lu_500_cg,mrd_lu_500_cg = MLM_1D_CG(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid,2)
+    mrerr_lu_500 = norm(vec(one_hidden_layer_nn(mrw_lu_500_cg,mrb_lu_500_cg,mrv_lu_500_cg,mrd_lu_500_cg,x,sigmoid).-yreal),2)
+end
+@time begin
+    mrw_lu_500_cgls,mrb_lu_500_cgls,mrv_lu_500_cgls,mrd_lu_500_cgls = MLM_1D_CGLS(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid,2)
+    mrerr_lu_500_cgls = norm(vec(one_hidden_layer_nn(mrw_lu_500_cgls,mrb_lu_500_cgls,mrv_lu_500_cgls,mrd_lu_500_cgls,x,sigmoid).-yreal),2)
 end
