@@ -75,11 +75,11 @@ function MLM_1D_CG(input_weights,input_biases,output_weights,output_bias,data,σ
     ϵ_H = ϵ
     κ_H = 0.1
     ϵ_AMG = 0.9
-    A_try = matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
-    fP = prolongation(A_try,ϵ_AMG)
-    fR = transpose(fP)/norm(fP)
-    fP = transpose(fR)
-    #σ_R = 1
+    A = matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
+    fP = prolongation(A,ϵ_AMG)
+    fR = transpose(fP)#/norm(fP)
+    #fP = transpose(fR)
+    #σ_R = norm(fP)
     H_size = size(fP)[2]
     para_size = size(input_biases)[1]
     s_size = 3*para_size+1
@@ -93,16 +93,16 @@ function MLM_1D_CG(input_weights,input_biases,output_weights,output_bias,data,σ
         grad_obj_b = obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
         grad_obj_v = obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
         grad_obj_d = obj_1d_d(input_weights,input_biases,output_weights,output_bias,data,σ)
-        R_grad_w = fR*obj_1d_w(input_weights,input_biases,output_weights,output_bias,data,σ)
-        R_grad_b = fR*obj_1d_b(input_weights,input_biases,output_weights,output_bias,data,σ)
-        R_grad_v = fR*obj_1d_v(input_weights,input_biases,output_weights,output_bias,data,σ)
+        R_grad_w = fR*grad_obj_w
+        R_grad_b = fR*grad_obj_b
+        R_grad_v = fR*grad_obj_v
         R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
         @show norm(R_grad_w,2)/(κ_H*norm(grad_obj_w,2)) norm(R_grad_b,2)/(κ_H*norm(grad_obj_b,2)) norm(R_grad_v,2)/(κ_H*norm(grad_obj_v,2))
         if l>1 && norm(R_grad_w,2) >= κ_H*norm(grad_obj_w,2) && norm(R_grad_b,2) >= κ_H*norm(grad_obj_b,2) && norm(R_grad_v,2) >= κ_H*norm(grad_obj_v,2) && norm(R_grad,2) > ϵ_H
             mH(s_H) = mH_1D(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR)
             s_H = cg(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR)))[1]
             s = vcat(fP*s_H[1:H_size],fP*s_H[H_size+1:2*H_size],fP*s_H[2*H_size+1:3*H_size],s_H[end])
-            mh(s_H) = mH(s_H)
+            mh(s_H) = mH(s_H)#/σ_R
             #fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
             #@show fk(s) fk(zeros(s_size))
             ρkn = fk(zeros(s_size))-fk(s)
@@ -156,9 +156,9 @@ function MLM_1D_CGLS(input_weights,input_biases,output_weights,output_bias,data,
     ϵ_AMG = 0.9
     A_try = matrixA(input_weights,input_biases,output_weights,output_bias,data,σ)
     fP = prolongation(A_try,ϵ_AMG)
-    fR = transpose(fP)/norm(fP)
-    fP = transpose(fR)
-    #σ_R = 1
+    fR = transpose(fP)#/norm(fP)
+    #fP = transpose(fR)
+    #σ_R = norm(fR)
     H_size = size(fP)[2]
     para_size = size(input_biases)[1]
     s_size = 3*para_size+1
@@ -178,10 +178,11 @@ function MLM_1D_CGLS(input_weights,input_biases,output_weights,output_bias,data,
         R_grad = vcat(R_grad_w,R_grad_b,R_grad_v,grad_obj_d)
         @show norm(R_grad_w,2)/(κ_H*norm(grad_obj_w,2)) norm(R_grad_b,2)/(κ_H*norm(grad_obj_b,2)) norm(R_grad_v,2)/(κ_H*norm(grad_obj_v,2))
         if l>1 && norm(R_grad_w,2) >= κ_H*norm(grad_obj_w,2) && norm(R_grad_b,2) >= κ_H*norm(grad_obj_b,2) && norm(R_grad_v,2) >= κ_H*norm(grad_obj_v,2) && norm(R_grad,2) > ϵ_H
-            mH(s_H) = mH_1D(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR_normalized)
-            s_H = cgls(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR_normalized),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR_normalized)))[1]
-            s = P_block*(s_H)
-            mh(s_H) = mH(s_H)
+            mH(s_H) = mH_1D(input_weights,input_biases,output_weights,output_bias,data,σ,s_H,λ,fR)
+            s_H = cgls(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR)))[1]
+            @show cgls(mH_line_A(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR),(-1).*vec(mH_line_b(input_weights,input_biases,output_weights,output_bias,data,σ,sH_size,λ,fR)))[2:end]
+            s = vcat(fP*s_H[1:H_size],fP*s_H[H_size+1:2*H_size],fP*s_H[2*H_size+1:3*H_size],s_H[end])
+            mh(s_H) = mH(s_H)#/σ_R
             #fk(s) = obj_1d(input_weights.+s[1:para_size],input_biases.+s[para_size+1:2*para_size],output_weights.+s[2*para_size+1:3*para_size],output_bias.+s[end],data,σ)
             #@show fk(s) fk(zeros(s_size))
             ρkn = fk(zeros(s_size))-fk(s)
@@ -219,7 +220,7 @@ function MLM_1D_CGLS(input_weights,input_biases,output_weights,output_bias,data,
     return input_weights,input_biases,output_weights,output_bias
 end
 ##########Test#################
-x = collect(LinRange(0,1,41))
+x = collect(LinRange(0,1,2000))
 yreal = -x.^2/2
 lower_bound = -5
 upper_bound = 5
