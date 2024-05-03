@@ -282,7 +282,7 @@ rd_lu_500 = lower_bound.+(upper_bound-lower_bound).*rand(1)
 
 @time begin
     lrw_lu_500_d,lrb_lu_500_d,lrv_lu_500_d,lrd_lu_500_d = LM_1D(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
-    lrerr_lu_500_d = norm(vec(one_hidden_layer_nn(lrw_lu_100_d,lrb_lu_500_d,lrv_lu_500_d,lrd_lu_500_d,x,sigmoid).-yreal),2)
+    lrerr_lu_500_d = norm(vec(one_hidden_layer_nn(lrw_lu_500_d,lrb_lu_500_d,lrv_lu_500_d,lrd_lu_500_d,x,sigmoid).-yreal),2)
 end
 @time begin
     lrw_lu_500_cg,lrb_lu_500_cg,lrv_lu_500_cg,lrd_lu_500_cg = LM_1D_CG(rw_lu_500,rb_lu_500,rv_lu_500,rd_lu_500,x,sigmoid)
