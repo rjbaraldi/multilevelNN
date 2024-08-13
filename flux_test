@@ -1,0 +1,378 @@
+using Flux
+using Distributed
+using Statistics
+using CUDA
+using ProgressMeter
+using Plots
+using LinearAlgebra
+using Zygote
+using ForwardDiff
+
+#build up the nn
+
+function neural_network(r::Int, #the number of nodes in hidden Layer, we assume that the number of nodes in each hidden layer is same,
+                        n::Int, #the number of hidden layers in NN
+                        f, #activation function
+                        input_dim::Int, #the dimension of input
+                        output_dim::Int #the dimension of output
+                    ) 
+    layers = []
+    #Input layer
+    push!(layers, Dense(input_dim,r,f))
+
+    #Hidden layers
+    for i in 1:(n-1)
+        push!(layers, Dense(r,r,f))
+    end
+    
+    #Output layer
+    push!(layers,Dense(r,output_dim))
+
+    #Combine layers into a Chain
+    return Chain(layers...)
+end
+
+
+
+
+
+#Test
+input_dim = 1
+output_dim = 1
+n = 1
+r = 500
+model = neural_network(r,n,tanh,input_dim,output_dim)
+# Generate random data for demonstration (replace with actual data)
+X = rand(Float32, input_dim, 50)  # 1000 samples of input_dim
+y = -X.^2/2  # One-hot encoded labels
+
+# Define the loss function
+function loss_function_with_L2_regularization(x,y,λ)
+    prediction_loss = Flux.Losses.mse(model(x),y;agg=mean)
+    L2_penalty = sum(norm(layer.weight)^2 for layer in model if isa(layer,Dense))
+    return prediction_loss+L2_penalty
+end
+
+
+loss(x, y) = Flux.Losses.mse(model(x),y;agg=mean)
+# Set up the optimizer
+learning_rate = 0.1
+opt = Flux.Optimise.Descent(learning_rate)
+λ = 0.01
+# Training loop
+epochs = 100  # Number of epochs
+
+for epoch in 1:epochs
+    for (x,y) in zip(X,y)
+    # Forward and backward pass for each batch of data
+    Flux.train!((x,y) -> loss_function_with_L2_regularization(x,y,λ), Flux.params(model), [(X, y)], opt)
+    end
+    println("Epoch $epoch complete")
+end
+
+# Function to print weights and biases
+# Function to print weights and biases
+function print_weights_and_biases(model)
+    for (i, layer) in enumerate(model)
+        if isa(layer, Dense)
+            println("Layer $i")
+            println("Weights: ", layer.weight)
+            println("Bias: ", layer.bias)
+        end
+    end
+end
+
+# Call the function to print weights and biases
+print_weights_and_biases(model)
+
+w = model[1].weight
+b = model[1].bias
+v = model[2].weight
+d = model[2].bias
+
+function test_nn(input_weight,input_bias,output_weight,output_bias,input,activation_function)
+    inner =   input_weight * input  .+ input_bias
+    active = activation_function.(inner)
+    output = output_weight * active .+ output_bias
+    return output
+end
+
+norm(vec(y-test_nn(w,b,v,d,X,tanh)),2)^2/50
+
+
+#Training loop
+epochs = 100
+for epoch in 1:epochs
+    for i in size(X,2)
+        x_data = X[:,i]
+        y_data = y[:,i]
+        #Forward pass: compute the loss
+        loss_ = loss_function_with_L2_regularization(x_data,y_data,λ)
+
+        #Backward pass: compute the gradients
+        gs = Flux.gradient(()->loss_function_with_L2_regularization(x_data,y_data,λ),Flux.params(model))
+
+        #Parameter update: update the model parameters
+        Flux.Optimise.update!(opt,Flux.params(model),gs)
+    end
+    println("Epoch $epoch complete")
+end
+w = model[1].weight
+b = model[1].bias
+v = model[2].weight
+d = model[2].bias
+norm(y-test_nn(w,b,v,d,X,tanh),2)^2/50
+
+
+
+# Define a simple neural network model
+model_x = Chain(
+    Dense(2, 10, sigmoid),
+    Dense(10, 1)
+)
+
+# Example input
+x = rand(Float32, 2, 5)  # Input vector with shape (2, 5)
+model_x(x)
+x[:,5]
+#Get the Jacobian matrix of nn w.r.t. input
+using LinearAlgebra
+
+function jacobian_hcat(model,x)
+    input_dim = size(x,1)
+    output_dim = size(model(x),1)
+    num_jacobian = size(x,2)
+    whole_jacobian = ForwardDiff.jacobian(x->model(x),x)
+    output = zeros(output_dim,num_jacobian*input_dim)
+    
+    for  i in 1:num_jacobian
+    output[1:output_dim,1+(i-1)*input_dim:i*input_dim] =  whole_jacobian[1+(i-1)*output_dim:i*output_dim,1+(i-1)*input_dim:i*input_dim]
+    end
+return output
+end
+
+function jacobian_index(model,x)
+    input_dim = size(x,1)
+    output_dim = size(model(x),1)
+    num_jacobian = size(x,2)
+    whole_jacobian = ForwardDiff.jacobian(x->model(x),x)
+    output = Vector{Matrix{Float64}}(undef,num_jacobian)
+    for  i in 1:num_jacobian
+        output[i] =  whole_jacobian[1+(i-1)*output_dim:i*output_dim,1+(i-1)*input_dim:i*input_dim]
+    end
+    return output
+    #for j in 1:num_jacobian
+    #    println("Jacobian matrix of x$j:")
+    #    println(output[j])
+    #end
+end
+
+
+function hessian_hcat(model,x)
+    num_input = size(x,2)
+    input_dim = size(x,1)
+    #hessian_block = zeros(input_dim,input_dim)
+    output_hessian = zeros(input_dim,num_input*input_dim)
+    for i in 1:num_input
+    x_i = x[:,i]
+    hessian_i(model,x) = ForwardDiff.jacobian(x->ForwardDiff.jacobian(y->model(y),x),x)
+    output_hessian[1:input_dim,1+(i-1)*input_dim:i*input_dim] = hessian_i(model,x_i)
+    end
+return output_hessian
+end
+
+hessian_hcat(model_x,x)
+
+function hessian_index(model,x)
+    num_input = size(x,2)
+    output_hessian = Vector{Matrix{Float64}}(undef,num_input)
+    for i in 1:num_input
+    x_i = x[:,i]
+    hessian_i(model,x) = ForwardDiff.jacobian(x->ForwardDiff.jacobian(y->model(y),x),x)
+    output_hessian[i] = hessian_i(model,x_i)
+    end
+return output_hessian
+end
+
+function laplacian_vcat(model,x)
+    num_input = size(x,2)
+    output_laplacian = zeros(num_input)
+    for i in 1:num_input
+    x_i = x[:,i]
+    hessian_i(model,x) = ForwardDiff.jacobian(x->ForwardDiff.jacobian(y->model(y),x),x)
+    output_laplacian[i] = sum(diag(hessian_i(model,x_i)))
+    end
+    return output_laplacian
+end
+
+
+function laplacian_vcat_update(model, x)
+    num_input = size(x, 2)
+    output_laplacian = [sum(diag(ForwardDiff.jacobian(x_i -> ForwardDiff.jacobian(y -> model(y), x_i), x[:, i]))) for i in 1:num_input]
+    return output_laplacian
+end
+
+function laplacian_index(model,x)
+    num_input = size(x,2)
+    output_laplacian = Vector{Vector{Float64}}(undef,num_input)
+    for i in 1:num_input
+    x_i = x[:,i]
+    hessian_i(model,x) = ForwardDiff.jacobian(x->ForwardDiff.jacobian(y->model(y),x),x)
+    output_laplacian[i] = [sum(diag(hessian_i(model,x_i)))]
+    end
+return output_laplacian
+end
+ 
+function loss_without_regularization(real_g1,model,x,y)
+    input_num = size(x,2)
+    return norm((real_g1(x)+laplacian_vcat(model,x)),2)^2/(2*input_num)
+end
+
+function loss_without_regularization_update(real_g1,model,x,y)
+    input_num = size(x,2)
+    return norm((real_g1(x)+laplacian_vcat_update(model,x)),2)^2/(2*input_num)
+end
+
+function regularization_term(real_g2,model,x,y,λ)
+    input_num = size(x,2)
+    return λ*norm((real_g2(x)-model(x)),2)^2/(2*input_num)
+end
+
+function loss_with_regularization(real_g1,real_g2,model,x,y,λ)
+    return loss_without_regularization_update(real_g1,model,x,y)+regularization_term(real_g2,model,x,y,λ)
+end
+
+
+function negative_square2(x)
+    return -x.^2/2
+end
+
+function cons(x)
+    input_num = size(x,2)
+    return ones(input_num)
+end
+
+
+X = reshape(collect(LinRange(0,1,41)),(1,41))
+y = -X.^2/2 
+model_const = Chain(
+    Dense(1, 300, sigmoid),
+    #Dense(300, 300, sigmoid),
+    Dense(300, 1)
+)
+
+# Optimizer
+optimizer = Flux.Optimise.Descent(0.1)
+
+# DataLoader
+data = [(X, y)]
+
+# Training function
+function train!(model, data, opt, loss_fn, epochs)
+    for epoch in 1:epochs
+        for (x, y) in data
+            gs = Flux.gradient(Flux.params(model)) do
+                loss_fn(cons, negative_square2,model, x, y,λ)
+            end
+            Flux.Optimise.update!(opt, Flux.params(model), gs)
+        end
+        println("Epoch $epoch completed")
+    end
+end
+
+# Number of epochs
+num_epochs = 100
+prev_val_loss = Inf
+λ = 0.1
+
+train!(model_const, data, optimizer, loss_without_regularization_update, num_epochs)
+    
+
+
+# Print the trained model
+println("Trained model: ", model_const)
+w100 = model_const[1].weight
+b100 = model_const[1].bias
+v100 = model_const[2].weight
+d100 = model_const[2].bias
+ypred = test_nn(w100,b100,v100,d100,X,sigmoid)
+
+yreal = -X.^2/2
+
+error_flux = norm(ypred-yreal,2)^2/41
+
+using Flux
+using Optim
+using ForwardDiff
+
+# Define a simple neural network model
+model = Chain(
+    Dense(2, 10, relu),
+    Dense(10, 1)
+)
+
+# Example data
+X = rand(Float32, 2, 100)  # 2 features, 100 samples
+y = rand(Float32, 100)     # 100 target values
+
+# Define the loss function (mean squared error)
+function loss_fn(model, X, y)
+    return Flux.Losses.mse(model(X), y)
+end
+
+# Gradient function using ForwardDiff
+function grad_fn(model, X, y)
+    params = Flux.params(model)
+    loss(x) = loss_fn(model, X, y)
+    return ForwardDiff.gradient(p -> loss(), params)
+end
+
+# Define the optimization problem for Optim.jl
+function optimize_with_bfgs(model, X, y, epochs)
+    # Objective function for Optim.jl
+    obj_fn(params) = loss_fn(model, X, y)
+    
+    # Gradient function for Optim.jl
+    grad_fn(params) = ForwardDiff.gradient(p -> obj_fn(p), params)
+    
+    # Convert parameters to a flat vector
+    initial_params = Flux.params(model) |> p -> collect(p)
+    
+    # Define objective and gradient functions compatible with Optim.jl
+    function objective_function(p)
+        model_params = reshape(p, size(Flux.params(model)))
+        Flux.load!(model, model_params)
+        loss = obj_fn(p)
+        grad = grad_fn(p)
+        return loss, grad
+    end
+    
+    # BFGS optimization from Optim.jl
+    result = Optim.optimize(
+        objective_function,
+        initial_params,
+        Optim.BFGS()
+    )
+    
+    # Extract optimized parameters
+    optimized_params = Optim.minimizer(result)
+    
+    # Update the model with the optimized parameters
+    Flux.load!(model, reshape(optimized_params, size(Flux.params(model))))
+    
+    println("Training completed with BFGS method.")
+end
+
+# Train the model using BFGS method
+optimize_with_bfgs(model, X, y, 100)
+
+# Print the trained model
+println("Trained model: ", model)
+
+# To inspect the weights of the trained model
+for layer in model
+    if layer isa Dense
+        println("Weights: ", layer.weight)
+        println("Bias: ", layer.bias)
+    end
+end
