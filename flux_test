@@ -265,9 +265,6 @@ model_const = Chain(
 optimizer = Flux.Optimise.Descent(0.1)
 
 # DataLoader
-data = [(X, y)]
-
-# Training function
 function train!(model, data, opt, loss_fn, epochs)
     for epoch in 1:epochs
         for (x, y) in data
@@ -285,7 +282,7 @@ num_epochs = 100
 prev_val_loss = Inf
 λ = 0.1
 
-train!(model_const, data, optimizer, loss_without_regularization_update, num_epochs)
+train!(model_const, data, optimizer, loss_with_regularization, num_epochs)
     
 
 
