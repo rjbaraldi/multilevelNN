@@ -266,7 +266,7 @@ function mk_1d(input_weights,input_biases,output_weights,output_bias,data,σ,s,�
     J20 = J_2(input_weights,input_biases,output_weights,output_bias,data[1],σ)
     J2e = J_2(input_weights,input_biases,output_weights,output_bias,data[end],σ)
     second_term = norm(F20,2)^2+(2*(J20'*F20)'*s)[1]+s'*J20'*J20*s+norm(F2e,2)^2+(2*(J2e'*F2e)'*s)[1]+s'*J2e'*J2e*s
-    return first_term/(2*N_D)+λ_p*second_term/(2*N_BC)+λ*norm(s,2)^2
+    return first_term/(2*N_D)+λ_p*second_term/(2*N_BC)+λ*norm(s,2)^2/2
 end
 
 function line_mk(input_weights,input_biases,output_weights,output_bias,data,σ,s,λ)
